@@ -84,7 +84,8 @@ enough, so that a model upgrade is not blocked by prompt tuning work.
 1. WHEN a candidate's pass rate is below the threshold but within the configured porting margin THE SYSTEM SHALL start a porting loop.
 2. THE SYSTEM SHALL split eval cases into a development set and a holdout set with a fixed seed.
 3. THE porting agent SHALL receive the current prompt, failing development cases, and model-specific guidance, and SHALL propose a revised prompt with a rationale.
-4. THE SYSTEM SHALL accept a revised prompt only IF (holdout pass rate improves OR holdout pass rate is unchanged AND development pass rate improves) AND no more than a configured number of previously passing holdout cases regress.
+4. THE SYSTEM SHALL accept a revised prompt only IF (holdout pass rate improves AND development pass rate does not decrease, OR holdout pass rate is unchanged AND development pass rate improves) AND no more than a configured number of previously passing holdout cases regress.
+4a. THE SYSTEM SHALL reject a revised prompt that contains text copied from any eval case input.
 5. THE SYSTEM SHALL never include holdout case inputs or outputs in anything sent to the porting agent.
 6. THE SYSTEM SHALL stop after a configured maximum number of iterations or when the budget is exhausted.
 7. THE SYSTEM SHALL never modify eval cases or graders during porting.

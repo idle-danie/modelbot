@@ -26,6 +26,9 @@ Rules:
 - Preserve the task, the output format, and every business rule in the original prompt.
 - Change wording, structure, ordering, examples, and explicitness only. Never weaken a requirement.
 - Do not special-case the inputs you see in failures; fix the underlying instruction instead.
+- Never copy evaluation inputs or their expected outputs into the prompt. If examples help, write new
+  synthetic ones that differ from every evaluation case. Revisions containing evaluation text are rejected.
+- Output only the prompt text itself, without the <current_prompt> tags.
 - Use the evaluate_prompt tool to test a hypothesis before you answer. It runs the development cases only.
 - Return the complete revised prompt, a short rationale, and the list of changes you made.
 """
@@ -41,6 +44,8 @@ MODEL_GUIDANCE = {
 MAX_TOOL_CALLS_PER_ITERATION = 3
 _MAX_FAILURES_SHOWN = 8
 _MAX_CHARS = 600
+_LEAK_MIN_CHARS = 15
+_OPEN, _CLOSE = "<current_prompt>", "</current_prompt>"
 
 
 class PromptRevision(BaseModel):
@@ -121,15 +126,34 @@ def regressions(before: SuiteResult, after: SuiteResult) -> int:
     return sum(1 for r in after.results if r.case_id in passed_before and not r.passed)
 
 
+def _norm(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
+def leaked_cases(prompt: str, cases: list[Case]) -> list[str]:
+    """IDs of eval cases whose input text (any line of >= 15 chars) appears verbatim in the prompt."""
+    hay = _norm(prompt)
+    leaked = []
+    for c in cases:
+        lines = [_norm(line) for line in c.input.splitlines()]
+        if any(len(line) >= _LEAK_MIN_CHARS and line in hay for line in lines):
+            leaked.append(c.id)
+    return leaked
+
+
+def clean_revision(text: str) -> str:
+    return text.replace(_OPEN, "").replace(_CLOSE, "").strip()
+
+
 def build_task(model_id: str, provider: str, prompt: str, dev_summary: str, history: list[str]) -> str:
     parts = [
         f"Target model: {model_id}",
         f"Model guidance: {MODEL_GUIDANCE.get(provider, 'No specific guidance; rely on the eval feedback.')}",
         "",
         "Current system prompt:",
-        "<<<",
+        _OPEN,
         prompt,
-        ">>>",
+        _CLOSE,
         "",
         "Development-set results with this prompt on the target model:",
         dev_summary,
@@ -210,8 +234,20 @@ def port_prompt(
         task = build_task(model_id, provider, best_prompt, summarize_failures(dev_now, dev), history)
         revision = reviser(task, lambda p: summarize_failures(evaluate(p, dev), dev))
 
-        candidate = revision.prompt.strip()
-        if not candidate or candidate == best_prompt.strip():
+        candidate = clean_revision(revision.prompt)
+        # Lines already present in the original prompt (e.g. its own examples) are not leaks.
+        leaks = [c for c in leaked_cases(candidate, cases) if c not in leaked_cases(prompt, cases)]
+        if leaks:
+            attempt = PortingAttempt(
+                i,
+                revision.rationale,
+                revision.changes,
+                best_holdout.pass_rate,
+                0,
+                False,
+                f"rejected: copies eval case(s) {', '.join(leaks[:3])}{'…' if len(leaks) > 3 else ''}",
+            )
+        elif not candidate or candidate == best_prompt.strip():
             attempt = PortingAttempt(
                 i,
                 revision.rationale,
@@ -225,10 +261,10 @@ def port_prompt(
             trial_holdout = evaluate(candidate, holdout)
             trial_dev = evaluate(candidate, dev)
             regs = regressions(best_holdout, trial_holdout)
-            # Holdout is the gate: it must improve, or hold steady while dev improves.
-            improved = trial_holdout.pass_rate > best_holdout.pass_rate or (
-                trial_holdout.pass_rate == best_holdout.pass_rate and trial_dev.pass_rate > dev_now.pass_rate
-            )
+            # Holdout is the gate: it must improve with dev not worse, or hold steady while dev improves.
+            h_new, h_old = trial_holdout.pass_rate, best_holdout.pass_rate
+            d_new, d_old = trial_dev.pass_rate, dev_now.pass_rate
+            improved = (h_new > h_old and d_new >= d_old) or (h_new == h_old and d_new > d_old)
             ok = improved and regs <= policy.max_regressions
             if ok:
                 reason = "accepted"
@@ -265,7 +301,10 @@ def porting_report(result: PortingResult, before: SuiteResult, after: SuiteResul
     lines = [
         f"## ✍️ modelbot port · `{target}` → `{result.model_id}`",
         "",
-        f"Full-suite pass rate on `{result.model_id}`: **{before.pass_rate:.0%} → {after.pass_rate:.0%}**",
+        f"Holdout pass rate (cases the agent never saw): **{result.holdout_before:.0%} → "
+        f"{result.holdout_after:.0%}**",
+        "",
+        f"Full-suite pass rate on `{result.model_id}`: {before.pass_rate:.0%} → {after.pass_rate:.0%}",
         *porting_section(result),
     ]
     return "\n".join(lines) + "\n"

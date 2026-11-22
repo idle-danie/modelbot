@@ -1,0 +1,20 @@
+# Scenario: the extractor was built on Claude 3.5 Haiku, which reached end-of-life.
+# The prompt was written for Claude; cheaper models need it adapted.
+region: us-east-1
+budget_usd: 1.0
+concurrency: 4
+porting_model: amazon.nova-pro-v1:0   # switch to a Claude model once your account has Anthropic access
+
+candidates:
+  providers: [anthropic, amazon]
+
+targets:
+  - name: email-extractor
+    file: app/settings.py
+    pattern: 'MODEL_ID = "([^"]+)"'
+    prompts: [prompts/extract.md]
+    evals: evals/cases.jsonl
+    threshold: 0.90
+    tolerance: 0.02
+    porting: {margin: 0.30, max_iterations: 4, max_regressions: 0}
+    limits: {max_cost_ratio: 3.0, max_p95_ratio: 2.0}

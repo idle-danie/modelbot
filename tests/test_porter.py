@@ -25,7 +25,7 @@ def reviser_returning(prompt_suffix: str, seen: list[str]):
         tool_output = evaluate_on_dev("probe")
         seen.extend([task, tool_output])
         json.loads(tool_output)  # the tool returns JSON the agent can read
-        base = task.split("<<<\n", 1)[1].split("\n>>>", 1)[0]
+        base = task.split("<current_prompt>\n", 1)[1].split("\n</current_prompt>", 1)[0]
         return PromptRevision(
             prompt=base + prompt_suffix, rationale="be explicit", changes=["add format rule"]
         )
@@ -98,3 +98,32 @@ def test_stops_when_told():
         should_stop=lambda: True,
     )
     assert r.attempts == [] and not r.accepted
+
+
+def test_revision_copying_eval_cases_is_rejected():
+    cases = [
+        Case(f"c{i}", f"Received: today\n\nPlease refund order number {i:06d} quickly", []) for i in range(10)
+    ]
+
+    def copying_reviser(task, evaluate_on_dev):
+        base = task.split("<current_prompt>\n", 1)[1].split("\n</current_prompt>", 1)[0]
+        example = "Please refund order number 000003 quickly"
+        return PromptRevision(prompt=f"{base}\nExample: {example} -> refund\n{FIX}", rationale="few-shot")
+
+    r = port_prompt(
+        model_id="cand",
+        provider="amazon",
+        prompt="Classify.",
+        cases=cases,
+        policy=PortingPolicy(max_iterations=1),
+        evaluate=evaluate,
+        reviser=copying_reviser,
+    )
+    assert not r.accepted
+    assert r.attempts[0].reason.startswith("rejected: copies eval case")
+
+
+def test_delimiters_are_stripped():
+    from modelbot.porter import clean_revision
+
+    assert clean_revision("<current_prompt>\nHello\n</current_prompt>") == "Hello"

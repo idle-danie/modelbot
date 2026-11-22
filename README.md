@@ -63,6 +63,20 @@ for that model:
 - modelbot, not the agent, decides whether to keep a revision. Holdout must improve, or hold steady while dev
   improves, with at most `max_regressions` previously passing holdout cases now failing.
 - An accepted prompt is re-run on the full suite before the final recommendation, and the PR shows the diff and rationale.
+- Revisions that copy eval case text into the prompt are rejected outright. In real runs the agent tried this
+  repeatedly ("few-shot examples" lifted from the dev set), which inflated full-suite scores without helping holdout.
+
+First real run, `examples/email-extractor`, Nova Lite with Nova Pro as the porting agent
+([full report](examples/email-extractor/SAMPLE-port-report.md)):
+
+| | Before | After |
+|---|---|---|
+| Holdout (never seen by the agent) | 50% | 62% |
+| Full suite | 55% | 65% |
+| Attempts | | 4 (1 accepted, 3 rejected for copying eval cases) |
+
+With 8 holdout cases a one-case change is close to run-to-run noise. Larger suites and repeated runs (planned) make
+these numbers trustworthy.
 
 ## Configuration
 

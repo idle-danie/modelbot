@@ -43,7 +43,9 @@
   - [x] 6.5 Wire porting into `eval` for near-miss candidates; `--no-port`
   - [x] 6.6 `port` command: adapt a prompt to one chosen model regardless of thresholds
   - [x] 6.7 Count the porting agent's own token usage against the run budget
-  - [ ] 6.8 Harder example where prompt porting measurably matters (current example saturates at ~100%)
+  - [x] 6.8 Harder example (`examples/email-extractor`) where prompt porting measurably matters
+  - [x] 6.9 Reject revisions that copy eval case text; require dev not to drop when holdout improves
+  - [ ] 6.10 Catch partial-phrase leakage (n-gram overlap) without false positives
   - _Requirements: 5.1–5.6_
 
 - [ ] 7. Decision
