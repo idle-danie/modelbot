@@ -114,4 +114,20 @@ def open_or_update_pr(
         pr.edit(title=title, body=body)
     else:
         pr = repo.create_pull(title=title, body=body, head=branch, base=base)
+    close_superseded(repo, branch, pr)
     return pr.html_url
+
+
+def close_superseded(repo: Any, branch: str, current: Any) -> list[int]:
+    """Close other open modelbot PRs for the same target, like Dependabot does for newer versions."""
+    target_prefix = branch.rsplit("/", 1)[0] + "/"
+    closed = []
+    for pr in repo.get_pulls(state="open"):
+        head = pr.head.ref
+        if head.startswith(target_prefix) and head != branch:
+            pr.create_issue_comment(
+                f"Superseded by #{current.number}: modelbot now recommends a different model."
+            )
+            pr.edit(state="closed")
+            closed.append(pr.number)
+    return closed
