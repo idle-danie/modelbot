@@ -12,7 +12,8 @@ import yaml
 
 from modelbot import discovery
 from modelbot.config import Config, ConfigError, Target, load_config
-from modelbot.decision import decide
+from modelbot.decision import decide, portable
+from modelbot.porter import port_prompt, strands_reviser
 from modelbot.pricing import BudgetTracker, has_price, load_prices
 from modelbot.report import render_markdown
 from modelbot.runner import load_cases, run_suite
@@ -59,6 +60,7 @@ def _scan(cfg: Config, root: Path) -> tuple[dict[str, discovery.ModelInfo], list
                 target=t.name,
                 baseline=baseline,
                 urgent=discovery.is_urgent(baseline, catalog),
+                status=discovery.baseline_status(baseline, catalog),
                 candidates=discovery.find_candidates(baseline, catalog, cfg.candidates),
             )
         )
@@ -79,6 +81,7 @@ def scan(
                 "target": r.target,
                 "baseline": r.baseline,
                 "urgent": r.urgent,
+                "status": r.status,
                 "candidates": [c.invoke_id for c in r.candidates],
             }
             for r in results
@@ -86,7 +89,7 @@ def scan(
         typer.echo(json.dumps(payload, indent=2))
         return
     for r in results:
-        flag = "⚠️  LEGACY" if r.urgent else "ok"
+        flag = {"LEGACY": "⚠️  LEGACY", "MISSING": "⛔ NOT IN CATALOG"}.get(r.status, "ok")
         typer.echo(f"{r.target}: {r.baseline} [{flag}] — {len(r.candidates)} candidate(s)")
         for c in r.candidates:
             typer.echo(f"    • {c.invoke_id}")
@@ -101,6 +104,7 @@ def eval_cmd(
     max_candidates: Annotated[int, typer.Option(help="Cap on auto-selected candidates per target")] = 3,
     prices_file: Annotated[Path | None, typer.Option("--prices", help="Price override YAML")] = None,
     output: Annotated[Path, typer.Option("--output", "-o")] = Path("modelbot-report.md"),
+    no_port: Annotated[bool, typer.Option("--no-port", help="Skip agent-driven prompt porting")] = False,
 ) -> None:
     """Evaluate baseline and candidates on each target's eval suite and write a report."""
     import boto3
@@ -110,7 +114,7 @@ def eval_cmd(
     prices = load_prices(override=prices_file)
     runtime = boto3.client("bedrock-runtime", region_name=cfg.region)
     budget = BudgetTracker(cfg.budget_usd)
-    _, scans = _scan(cfg, root)
+    catalog, scans = _scan(cfg, root)
 
     reports = []
     for target, sc in zip(cfg.targets, scans, strict=True):
@@ -124,8 +128,9 @@ def eval_cmd(
             typer.echo(f"{target.name}: baseline {sc.baseline} has no price; add it with --prices", err=True)
             raise typer.Exit(2)
 
-        def run(model_id: str, prompt: str = prompt, cases: list = cases):
-            typer.echo(f"  evaluating {model_id} on {len(cases)} cases …", err=True)
+        def run(model_id: str, prompt: str = prompt, cases: list = cases, quiet: bool = False):
+            if not quiet:
+                typer.echo(f"  evaluating {model_id} on {len(cases)} cases …", err=True)
             return run_suite(
                 runtime, model_id, prompt, cases, concurrency=cfg.concurrency, prices=prices, budget=budget
             )
@@ -139,7 +144,32 @@ def eval_cmd(
                 typer.echo(f"  skip {model_id}: every case errored ({r.errored[0].error})", err=True)
                 continue
             results.append(r)
-        rec = decide(target, baseline, results, prices, urgent=sc.urgent)
+        rec = decide(target, baseline, results, prices, urgent=sc.urgent, baseline_status=sc.status)
+
+        can_port = not no_port and target.porting.enabled and cfg.porting_model and rec.chosen is None
+        near_misses = [c for c in rec.ranked if portable(c, baseline, target)] if can_port else []
+        if near_misses:
+            best = near_misses[0]
+            info = catalog.get(discovery.base_model_id(best.model_id))
+            typer.echo(
+                f"  porting prompt for {best.model_id} ({best.pass_rate:.0%}) with {cfg.porting_model} …",
+                err=True,
+            )
+            ported = port_prompt(
+                model_id=best.model_id,
+                provider=info.provider if info else "",
+                prompt=prompt,
+                cases=cases,
+                policy=target.porting,
+                evaluate=lambda p, cs, m=best.model_id: run(m, prompt=p, cases=cs, quiet=True),
+                reviser=strands_reviser(cfg.porting_model, cfg.region),
+                should_stop=lambda: budget.exhausted,
+            )
+            if ported.accepted:
+                rerun = run(best.model_id, prompt=ported.revised)
+                results = [rerun if r is best else r for r in results]
+                rec = decide(target, baseline, results, prices, urgent=sc.urgent, baseline_status=sc.status)
+            rec.ported[best.model_id] = ported
         reports.append(render_markdown(rec, prices))
 
     md = "\n---\n\n".join(reports)

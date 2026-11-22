@@ -14,7 +14,8 @@
   - [x] 3.1 `ModelInfo` and catalog parsing from `ListFoundationModels`
   - [x] 3.2 Merge inference profiles (`us.` / `apac.` / `global.` prefixes) into the catalog
   - [x] 3.3 Candidate filtering by provider allowlist, denylist, modalities
-  - [x] 3.4 Urgent flag for `LEGACY` baselines
+  - [x] 3.4 Urgent flag for `LEGACY` baselines and baselines missing from the catalog (end-of-life)
+  - [x] 3.7 Exclude speech-to-speech models; prefer same provider and tier (haiku → haiku)
   - [x] 3.5 `scan` command: table + JSON output
   - [ ] 3.6 Skip already-evaluated (suite hash cache in `.modelbot/state.json`)
   - _Requirements: 2.1–2.5_
@@ -34,11 +35,12 @@
   - [ ] 5.3 Reject judge == candidate
   - _Requirements: 4.1–4.4_
 
-- [ ] 6. Prompt porting agent
-  - [ ] 6.1 Deterministic dev/holdout split
-  - [ ] 6.2 Strands agent with `evaluate_prompt` tool and model-specific guidance
-  - [ ] 6.3 Outer acceptance loop (holdout improvement, regression limit, max iterations)
-  - [ ] 6.4 Prompt diff + rationale in results
+- [x] 6. Prompt porting agent
+  - [x] 6.1 Deterministic dev/holdout split
+  - [x] 6.2 Strands agent with `evaluate_prompt` tool and model-specific guidance
+  - [x] 6.3 Outer acceptance loop (holdout improvement, regression limit, max iterations)
+  - [x] 6.4 Prompt diff + rationale in results
+  - [x] 6.5 Wire porting into `eval` for near-miss candidates; `--no-port`
   - _Requirements: 5.1–5.6_
 
 - [ ] 7. Decision

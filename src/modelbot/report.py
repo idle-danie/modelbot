@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import difflib
+
 from modelbot.decision import Recommendation
+from modelbot.porter import PortingResult
 from modelbot.pricing import Price
 from modelbot.runner import SuiteResult
 
@@ -53,9 +56,58 @@ def _caveats(suites: list[SuiteResult]) -> list[str]:
     return ["", "**Caveats**", "", *notes] if notes else []
 
 
+def porting_section(pr: PortingResult) -> list[str]:
+    head = f"### ✍️ Prompt porting for `{pr.model_id}`"
+    summary = (
+        f"Holdout pass rate {pr.holdout_before:.0%} → {pr.holdout_after:.0%} "
+        f"after {len(pr.attempts)} attempt(s)."
+    )
+    lines = ["", head, "", summary if pr.accepted else f"No revision accepted. {summary}"]
+    if pr.accepted:
+        diff = difflib.unified_diff(
+            pr.original.splitlines(),
+            pr.revised.splitlines(),
+            "prompt (current)",
+            "prompt (ported)",
+            lineterm="",
+        )
+        lines += [
+            "",
+            f"**Why:** {pr.rationale}",
+            "",
+            "<details><summary>Prompt diff</summary>",
+            "",
+            "```diff",
+            *diff,
+            "```",
+            "</details>",
+        ]
+    rows = [
+        f"| {a.iteration} | {a.holdout_pass_rate:.0%} | {a.regressions} | {a.reason} | "
+        f"{'; '.join(a.changes)[:160] or '–'} |"
+        for a in pr.attempts
+    ]
+    lines += [
+        "",
+        "<details><summary>Attempts</summary>",
+        "",
+        "| # | Holdout | Regressions | Result | Changes |",
+        "|---|---|---|---|---|",
+        *rows,
+        "</details>",
+    ]
+    return lines
+
+
 def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
     lines = [f"## 🤖 modelbot · `{rec.target}`", ""]
-    if rec.urgent:
+    if rec.baseline_status == "MISSING":
+        lines += [
+            "> ⛔ **Baseline model is no longer listed in the Bedrock catalog for this region.** "
+            "It has likely reached end-of-life and calls to it will fail.",
+            "",
+        ]
+    elif rec.urgent:
         lines += ["> ⚠️ **Baseline model is LEGACY on Amazon Bedrock.** Plan the migration now.", ""]
     if rec.chosen is None:
         lines += ["**No candidate met the quality, cost, and latency policy.**"]
@@ -63,6 +115,8 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
             lines += ["", "Manual review required: the baseline is deprecated."]
         if rec.ranked:
             lines += ["", "Best candidate:", "", comparison_table(rec.baseline, rec.ranked[0], prices)]
+        for pr in rec.ported.values():
+            lines += porting_section(pr)
         lines += _caveats([rec.baseline, *rec.ranked])
         return "\n".join(lines) + "\n"
     lines += [
@@ -71,7 +125,9 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
         comparison_table(rec.baseline, rec.chosen, prices),
         "",
         f"<sub>eval suite `{rec.baseline.suite_hash}` · {len(rec.baseline.results)} cases</sub>",
-        *_caveats([rec.baseline, rec.chosen]),
     ]
-    # TODO(task 8.2): failing-case and prompt-diff <details> sections; JSON report.
+    for pr in rec.ported.values():
+        lines += porting_section(pr)
+    lines += _caveats([rec.baseline, rec.chosen])
+    # TODO(task 8.2): failing-case <details> section; JSON report.
     return "\n".join(lines) + "\n"

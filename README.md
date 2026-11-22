@@ -48,6 +48,18 @@ uv run modelbot eval --candidate us.anthropic.claude-haiku-4-5-20251001-v1:0   #
 ```
 
 Every run prints its request count and estimated spend, and stops issuing new requests once `budget_usd` is reached.
+Candidates without an entry in `prices.yaml` are skipped. Add current prices for your region with `--prices my-prices.yaml`.
+
+## The porting agent
+
+When a candidate lands just below the quality bar (within `porting.margin`), a Strands agent rewrites the prompt
+for that model:
+
+- Eval cases are split into **dev** and **holdout** with a fixed seed. The agent only ever sees dev cases.
+- The agent can call `evaluate_prompt` (capped at 3 calls per attempt) to test ideas on dev before answering.
+- modelbot, not the agent, decides whether to keep a revision. Holdout must improve, or hold steady while dev
+  improves, with at most `max_regressions` previously passing holdout cases now failing.
+- An accepted prompt is re-run on the full suite before the final recommendation, and the PR shows the diff and rationale.
 
 ## Configuration
 
@@ -87,7 +99,8 @@ for requirements, design, and the task list.
 |---|---|
 | Config, discovery (incl. inference profiles), deterministic graders, decision, report | ✅ |
 | `eval` command with concurrency, throttling retries, budget enforcement | ✅ |
-| LLM judge, prompt porting agent | 🚧 |
+| Prompt porting agent (Strands) with holdout-gated acceptance | ✅ |
+| LLM judge | 🚧 |
 | PR creation, GitHub Action | 🚧 |
 
 ## License

@@ -8,6 +8,11 @@ from typing import Any
 from modelbot.config import CandidatePolicy
 
 LEGACY = "LEGACY"
+MISSING = "MISSING"  # not listed in the region's catalog any more: likely end-of-life
+# Speech-to-speech models need the bidirectional streaming API, not Converse.
+_UNSUPPORTED_INPUTS = {"SPEECH"}
+# Tier words used to prefer like-for-like upgrades (haiku -> haiku, lite -> lite).
+_TIERS = ("haiku", "sonnet", "opus", "fable", "micro", "lite", "pro", "premier")
 # Cross-region inference profile prefixes, e.g. "us.anthropic.claude-...".
 _PROFILE_PREFIXES = ("us.", "eu.", "apac.", "global.")
 
@@ -33,6 +38,7 @@ class ScanResult:
     target: str
     baseline: str
     urgent: bool
+    status: str = "ACTIVE"
     candidates: list[ModelInfo] = field(default_factory=list)
 
 
@@ -111,9 +117,17 @@ def invocable(info: ModelInfo) -> bool:
     return "ON_DEMAND" in info.inference_types or info.invoke_id != info.model_id
 
 
-def is_urgent(baseline: str, catalog: dict[str, ModelInfo]) -> bool:
+def baseline_status(baseline: str, catalog: dict[str, ModelInfo]) -> str:
     info = catalog.get(base_model_id(baseline))
-    return info is not None and info.lifecycle == LEGACY
+    return MISSING if info is None else info.lifecycle
+
+
+def is_urgent(baseline: str, catalog: dict[str, ModelInfo]) -> bool:
+    return baseline_status(baseline, catalog) in (LEGACY, MISSING)
+
+
+def tier(model_id: str) -> str | None:
+    return next((t for t in _TIERS if f"-{t}" in model_id or f".{t}" in model_id), None)
 
 
 def find_candidates(baseline: str, catalog: dict[str, ModelInfo], policy: CandidatePolicy) -> list[ModelInfo]:
@@ -121,26 +135,22 @@ def find_candidates(baseline: str, catalog: dict[str, ModelInfo], policy: Candid
     needed = catalog[base].input_modalities if base in catalog else ("TEXT",)
     allowed = {p.lower() for p in policy.providers}
     denied = {base_model_id(d) for d in policy.deny}
-    return sorted(
-        (
-            m
-            for m in catalog.values()
-            if m.model_id != base
-            and m.provider in allowed
-            and m.model_id not in denied
-            and m.lifecycle != LEGACY
-            and invocable(m)
-            and set(needed) <= set(m.input_modalities)
-        ),
-        # Same provider as the baseline first, then newest-looking IDs first.
-        key=lambda m: (m.provider != _provider_of(base, catalog), _desc(m.model_id)),
+    eligible = [
+        m
+        for m in catalog.values()
+        if m.model_id != base
+        and m.provider in allowed
+        and m.model_id not in denied
+        and m.lifecycle != LEGACY
+        and invocable(m)
+        and not _UNSUPPORTED_INPUTS & set(m.input_modalities)
+        and set(needed) <= set(m.input_modalities)
+    ]
+    # Newest-looking IDs first, then (stable sort) same provider and same tier as the baseline first.
+    eligible.sort(key=lambda m: m.model_id, reverse=True)
+    base_provider = catalog[base].provider if base in catalog else base.split(".", 1)[0]
+    base_tier = tier(base)
+    eligible.sort(
+        key=lambda m: (m.provider != base_provider, base_tier is None or tier(m.model_id) != base_tier)
     )
-
-
-def _provider_of(model_id: str, catalog: dict[str, ModelInfo]) -> str:
-    info = catalog.get(model_id)
-    return info.provider if info else model_id.split(".", 1)[0]
-
-
-def _desc(s: str) -> tuple[int, ...]:
-    return tuple(-ord(ch) for ch in s)
+    return eligible

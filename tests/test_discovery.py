@@ -1,5 +1,13 @@
 from modelbot.config import CandidatePolicy
-from modelbot.discovery import attach_profiles, base_model_id, find_candidates, is_urgent, parse_catalog
+from modelbot.discovery import (
+    MISSING,
+    attach_profiles,
+    base_model_id,
+    baseline_status,
+    find_candidates,
+    is_urgent,
+    parse_catalog,
+)
 
 RESPONSE = {
     "modelSummaries": [
@@ -103,3 +111,41 @@ def test_global_profile_fallback():
     catalog = parse_catalog(PROFILE_ONLY)
     attach_profiles(catalog, PROFILES, "eu-west-1")
     assert catalog["anthropic.claude-sonnet-4-5-20250929-v1:0"].invoke_id.startswith("global.")
+
+
+def test_missing_baseline_is_urgent():
+    catalog = parse_catalog(RESPONSE)
+    assert baseline_status("us.anthropic.claude-2-v1", catalog) == MISSING
+    assert is_urgent("us.anthropic.claude-2-v1", catalog)
+
+
+TIERED = {
+    "modelSummaries": [
+        {"modelId": m, "providerName": p, "inputModalities": i}
+        for m, p, i in [
+            ("anthropic.claude-haiku-4-5", "Anthropic", ["TEXT"]),
+            ("anthropic.claude-haiku-5-5", "Anthropic", ["TEXT"]),
+            ("anthropic.claude-sonnet-5", "Anthropic", ["TEXT"]),
+            ("anthropic.claude-sonnet-5-5", "Anthropic", ["TEXT"]),
+            ("amazon.nova-lite-v1:0", "Amazon", ["TEXT"]),
+            ("amazon.nova-2-5-sonic", "Amazon", ["SPEECH", "TEXT"]),
+        ]
+    ]
+}
+
+
+def test_same_tier_newest_first_and_speech_excluded():
+    catalog = parse_catalog(TIERED)
+    ids = [
+        m.model_id
+        for m in find_candidates(
+            "anthropic.claude-haiku-3", catalog, CandidatePolicy(providers=["anthropic", "amazon"])
+        )
+    ]
+    assert ids == [
+        "anthropic.claude-haiku-5-5",
+        "anthropic.claude-haiku-4-5",
+        "anthropic.claude-sonnet-5-5",
+        "anthropic.claude-sonnet-5",
+        "amazon.nova-lite-v1:0",
+    ]

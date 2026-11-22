@@ -43,7 +43,7 @@ exists, so that I never learn about it from a production outage.
 #### Acceptance Criteria
 
 1. WHEN `modelbot scan` runs THE SYSTEM SHALL list Bedrock foundation models and inference profiles available in the configured region.
-2. WHEN a baseline model has lifecycle status `LEGACY` THE SYSTEM SHALL mark the target as **urgent**.
+2. WHEN a baseline model has lifecycle status `LEGACY`, or is no longer listed in the region's catalog, THE SYSTEM SHALL mark the target as **urgent**.
 3. THE SYSTEM SHALL select candidates that match the candidate policy, support the modalities the target needs, and are not the baseline.
 4. WHEN a candidate has already been evaluated against the same eval suite version THE SYSTEM SHALL skip it unless `--force` is given.
 5. THE SYSTEM SHALL output scan results as a human-readable table and as JSON.
@@ -84,9 +84,11 @@ enough, so that a model upgrade is not blocked by prompt tuning work.
 1. WHEN a candidate's pass rate is below the threshold but within the configured porting margin THE SYSTEM SHALL start a porting loop.
 2. THE SYSTEM SHALL split eval cases into a development set and a holdout set with a fixed seed.
 3. THE porting agent SHALL receive the current prompt, failing development cases, and model-specific guidance, and SHALL propose a revised prompt with a rationale.
-4. THE SYSTEM SHALL accept a revised prompt only IF holdout pass rate improves AND no more than a configured number of previously passing holdout cases regress.
-5. THE SYSTEM SHALL stop after a configured maximum number of iterations.
-6. THE SYSTEM SHALL never modify eval cases or graders during porting.
+4. THE SYSTEM SHALL accept a revised prompt only IF (holdout pass rate improves OR holdout pass rate is unchanged AND development pass rate improves) AND no more than a configured number of previously passing holdout cases regress.
+5. THE SYSTEM SHALL never include holdout case inputs or outputs in anything sent to the porting agent.
+6. THE SYSTEM SHALL stop after a configured maximum number of iterations or when the budget is exhausted.
+7. THE SYSTEM SHALL never modify eval cases or graders during porting.
+8. THE SYSTEM SHALL cap the number of evaluation tool calls the agent may make per iteration.
 
 ### Requirement 6 — Decision
 
