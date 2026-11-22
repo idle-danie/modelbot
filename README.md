@@ -118,8 +118,11 @@ Eval cases are JSONL with one or more graders (`exact`, `contains`, `regex`, `js
 
 1. Deploy the OIDC role (least privilege, trusted only for `main` of your repo, so PRs and forks cannot assume it):
    ```bash
+   # GitHub's OIDC subject may use immutable IDs (repo:owner@ID/repo@ID:...). Check which one your repo uses:
+   gh api repos/<you>/<repo>/actions/oidc/customization/sub
    aws cloudformation deploy --template-file infra/github-oidc-role.yaml --stack-name modelbot-github \
-     --capabilities CAPABILITY_IAM --parameter-overrides GitHubOwner=<you> RepositoryName=<repo>
+     --capabilities CAPABILITY_IAM --parameter-overrides GitHubOwner=<you> RepositoryName=<repo> \
+     GitHubOwnerId=<owner id> RepositoryId=<repo id>   # omit both for the legacy subject format
    aws cloudformation describe-stacks --stack-name modelbot-github --query "Stacks[0].Outputs"
    ```
 2. Store the role ARN as the repository **secret** `MODELBOT_ROLE_ARN` (masks your account ID in logs) and set the

@@ -15,6 +15,16 @@ Parameters:
     Type: String
     Default: main
     Description: Only workflows running on this branch (schedule / workflow_dispatch / push) can assume the role
+  GitHubOwnerId:
+    Type: String
+    Default: ""
+    Description: >-
+      Numeric owner ID for GitHub's immutable OIDC subject (repo:owner@ID/repo@ID:...). Find both IDs with
+      `gh api repos/OWNER/REPO/actions/oidc/customization/sub`. Leave empty for the legacy subject format.
+  RepositoryId:
+    Type: String
+    Default: ""
+    Description: Numeric repository ID for the immutable OIDC subject. Leave empty for the legacy format.
   CreateOIDCProvider:
     Type: String
     AllowedValues: ["true", "false"]
@@ -23,6 +33,7 @@ Parameters:
 
 Conditions:
   CreateProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+  ImmutableSubject: !Not [!Or [!Equals [!Ref GitHubOwnerId, ""], !Equals [!Ref RepositoryId, ""]]]
 
 Resources:
   GitHubOIDCProvider:
@@ -50,7 +61,12 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwner}/${RepositoryName}:ref:refs/heads/${Branch}
+                # Immutable subjects pin numeric IDs, so a re-created account or repo with the same name cannot
+                # assume the role.
+                token.actions.githubusercontent.com:sub: !If
+                  - ImmutableSubject
+                  - !Sub repo:${GitHubOwner}@${GitHubOwnerId}/${RepositoryName}@${RepositoryId}:ref:refs/heads/${Branch}
+                  - !Sub repo:${GitHubOwner}/${RepositoryName}:ref:refs/heads/${Branch}
       Policies:
         - PolicyName: modelbot-bedrock
           PolicyDocument:
