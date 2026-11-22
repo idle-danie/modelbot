@@ -122,13 +122,14 @@ Eval cases are JSONL with one or more graders (`exact`, `contains`, `regex`, `js
      --capabilities CAPABILITY_IAM --parameter-overrides GitHubOwner=<you> RepositoryName=<repo>
    aws cloudformation describe-stacks --stack-name modelbot-github --query "Stacks[0].Outputs"
    ```
-2. Set the repository variable `MODELBOT_ROLE_ARN` to the role ARN.
+2. Store the role ARN as the repository **secret** `MODELBOT_ROLE_ARN` (masks your account ID in logs) and set the
+   variable `MODELBOT_ENABLED=true`.
 3. Settings → Actions → General → enable "Allow GitHub Actions to create and approve pull requests".
 4. Add a workflow (see [`.github/workflows/modelbot.yml`](.github/workflows/modelbot.yml)):
    ```yaml
    - uses: idle-danie/modelbot@main
      with:
-       role-to-assume: ${{ vars.MODELBOT_ROLE_ARN }}
+       role-to-assume: ${{ secrets.MODELBOT_ROLE_ARN }}
        config: modelbot.yaml
    ```
 
