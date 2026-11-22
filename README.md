@@ -167,7 +167,7 @@ What we learned:
        config: modelbot.yaml
    ```
 
-Example PR opened by modelbot: [#2](https://github.com/idle-danie/modelbot/pull/2).
+Example PR opened by modelbot from GitHub Actions: [#3](https://github.com/idle-danie/modelbot/pull/3) (it superseded [#2](https://github.com/idle-danie/modelbot/pull/2)).
 
 ## IAM
 
