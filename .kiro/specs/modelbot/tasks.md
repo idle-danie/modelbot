@@ -45,8 +45,9 @@
   - [x] 6.7 Count the porting agent's own token usage against the run budget
   - [x] 6.8 Harder example (`examples/email-extractor`) where prompt porting measurably matters
   - [x] 6.9 Reject revisions that copy eval case text; require dev not to drop when holdout improves
+  - [ ] 6.12 Vary fixtures such as the Received date across eval cases so date examples cannot flatter holdout
   - [ ] 6.10 Catch partial-phrase leakage (n-gram overlap) without false positives
-  - [x] 6.11 Rule-preservation check: a pinned judge model compares original vs revised prompt and rejects revisions
+  - [x] 6.11 Rule-preservation check (severity-based: contradiction/removal block, additions are surfaced): a pinned judge model compares original vs revised prompt and rejects revisions
         that add, drop, or change business rules (observed: agent wrote `"$89.50" -> 8950` into the prompt)
   - _Requirements: 5.1–5.6_
 

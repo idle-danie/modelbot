@@ -114,7 +114,7 @@ def test_eval_ports_prompt_for_near_miss_candidate(example_dir, tmp_path, monkey
         return revise
 
     monkeypatch.setattr(cli, "strands_reviser", fake_reviser)
-    monkeypatch.setattr(cli, "strands_rule_checker", lambda *a, **k: lambda o, r: RuleCheck(preserved=True))
+    monkeypatch.setattr(cli, "strands_rule_checker", lambda *a, **k: lambda o, r: RuleCheck())
     out = tmp_path / "report.md"
     result = CliRunner().invoke(app, ["eval", "-c", str(example_dir / "modelbot.yaml"), "-o", str(out)])
     assert result.exit_code == 0, result.output

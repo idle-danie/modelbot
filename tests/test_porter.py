@@ -2,7 +2,7 @@ import json
 
 from modelbot.config import PortingPolicy
 from modelbot.graders import GraderResult
-from modelbot.porter import PromptRevision, RuleCheck, port_prompt, split_cases
+from modelbot.porter import PromptRevision, RuleCheck, RuleFinding, port_prompt, split_cases
 from modelbot.runner import Case, CaseResult, SuiteResult
 
 CASES = [Case(f"c{i}", f"input-{i}", []) for i in range(10)]
@@ -138,10 +138,8 @@ def test_rule_checker_rejects_before_spending_on_evals():
 
     def checker(original, revised):
         bad = "8950" in revised
-        return RuleCheck(
-            preserved=not bad,
-            violations=['amount example "$89.50" -> 8950 contradicts the number rule'] if bad else [],
-        )
+        kind = "contradiction" if bad else "addition"
+        return RuleCheck(findings=[RuleFinding(kind=kind, rule="amount", detail='"$89.50" -> 8950')])
 
     r = port_prompt(
         model_id="cand",
@@ -169,6 +167,31 @@ def test_rule_checker_allows_faithful_revision():
         policy=PortingPolicy(max_iterations=1),
         evaluate=evaluate,
         reviser=reviser_returning("\n" + FIX, []),
-        rule_checker=lambda o, rv: RuleCheck(preserved=True),
+        rule_checker=lambda o, rv: RuleCheck(
+            findings=[RuleFinding(kind="addition", rule="format", detail="raw JSON only")]
+        ),
     )
     assert r.accepted
+
+
+def test_additions_are_allowed_and_surfaced():
+    r = port_prompt(
+        model_id="cand",
+        provider="amazon",
+        prompt="Classify.",
+        cases=CASES,
+        policy=PortingPolicy(max_iterations=1),
+        evaluate=evaluate,
+        reviser=reviser_returning("\n" + FIX, []),
+        rule_checker=lambda o, rv: RuleCheck(
+            findings=[RuleFinding(kind="addition", rule="format", detail="raw JSON only")]
+        ),
+    )
+    assert r.accepted and r.additions == ["format: raw JSON only"]
+
+
+def test_removal_blocks():
+    check = RuleCheck(
+        findings=[RuleFinding(kind="removal", rule="injection", detail="untrusted-input rule dropped")]
+    )
+    assert not check.preserved and check.violations == ["removal · injection: untrusted-input rule dropped"]

@@ -86,6 +86,7 @@ enough, so that a model upgrade is not blocked by prompt tuning work.
 3. THE porting agent SHALL receive the current prompt, failing development cases, and model-specific guidance, and SHALL propose a revised prompt with a rationale.
 4. THE SYSTEM SHALL accept a revised prompt only IF (holdout pass rate improves AND development pass rate does not decrease, OR holdout pass rate is unchanged AND development pass rate improves) AND no more than a configured number of previously passing holdout cases regress.
 4a. THE SYSTEM SHALL reject a revised prompt that contains text copied from any eval case input.
+4b. THE SYSTEM SHALL reject a revised prompt that contradicts or removes a business rule of the original prompt, as judged by the pinned judge model, and SHALL list rules the revision adds or makes explicit in the report for human review.
 5. THE SYSTEM SHALL never include holdout case inputs or outputs in anything sent to the porting agent.
 6. THE SYSTEM SHALL stop after a configured maximum number of iterations or when the budget is exhausted.
 7. THE SYSTEM SHALL never modify eval cases or graders during porting.

@@ -112,6 +112,13 @@ def porting_section(pr: PortingResult) -> list[str]:
         f"{_cell('; '.join(_bullets(a.changes))) or '–'} |"
         for a in pr.attempts
     ]
+    if pr.accepted and pr.additions:
+        lines += [
+            "",
+            "**⚠️ Rules made explicit by the ported prompt. Confirm they match your intent before merging:**",
+            "",
+            *[f"- {a}" for a in _bullets(pr.additions)],
+        ]
     violations = [f"- attempt {a.iteration}: {v}" for a in pr.attempts for v in _bullets(a.violations)]
     if violations:
         lines += [

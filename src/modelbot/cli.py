@@ -253,6 +253,10 @@ def port(
     config: ConfigOpt = Path("modelbot.yaml"),
     target_name: Annotated[str | None, typer.Option("--target", help="Target name (default: first)")] = None,
     porting_model: Annotated[str | None, typer.Option(help="Override porting_model from config")] = None,
+    judge_model: Annotated[str | None, typer.Option(help="Override judge_model from config")] = None,
+    budget_usd: Annotated[
+        float | None, typer.Option("--budget", help="Override budget_usd from config")
+    ] = None,
     prices_file: Annotated[Path | None, typer.Option("--prices", help="Price override YAML")] = None,
     output: Annotated[Path, typer.Option("--output", "-o")] = Path("modelbot-port.md"),
 ) -> None:
@@ -262,6 +266,10 @@ def port(
     from modelbot.porter import porting_report
 
     cfg = _load(config)
+    overrides = {
+        k: v for k, v in {"judge_model": judge_model, "budget_usd": budget_usd}.items() if v is not None
+    }
+    cfg = cfg.model_copy(update=overrides)
     root = config.parent
     target = next((t for t in cfg.targets if target_name in (None, t.name)), None)
     if target is None:

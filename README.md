@@ -114,6 +114,37 @@ Eval cases are JSONL with one or more graders (`exact`, `contains`, `regex`, `js
 {"id": "bug-01", "input": "Export returns 500 and our close is blocked!", "graders": [{"type": "json_schema", "schema": {"properties": {"category": {"const": "bug"}, "urgent": {"const": true}}}}]}
 ```
 
+## Experiment: Nova Pro vs Claude Sonnet 4.6 as porting agent and judge
+
+Task: port the Claude-style `email-extractor` prompt to **Nova Lite** (20 cases, 8 held out).
+
+**Judges** ([`experiments/judge_comparison.py`](experiments/judge_comparison.py)): three known revisions, 2 runs each.
+
+| Judge | Catches the wrong rule (`"$89.50" -> 8950`) | Passes correct clarification | Passes rewording | Cost |
+|---|---|---|---|---|
+| Nova Pro | 1/2, once for the wrong reason | 2/2 | 2/2 | $0.013 |
+| Sonnet 4.6 | 2/2, labelled `contradiction · amount` | 2/2 | 2/2 | $0.062 |
+
+**Porting runs** (4 attempts each):
+
+| Agent / judge | Holdout | Full suite | What happened |
+|---|---|---|---|
+| Nova Pro / Nova Pro | 50% → 50% | 55% → 55% | 3 attempts copied eval cases, 1 changed rules ([report](examples/email-extractor/SAMPLE-port-report-with-guards.md)) |
+| Sonnet / Sonnet, judge rejects *any* added rule | 50% → 50% | 55% → 55% | Good revisions all rejected as "added rules" ([report](examples/email-extractor/SAMPLE-port-report-sonnet-strict-judge.md)) |
+| Sonnet / Sonnet, judge blocks contradictions and removals only | **50% → 75%** | **60% → 90%** | 2 accepted; the 5 rules it made explicit are listed for review ([report](examples/email-extractor/SAMPLE-port-report-sonnet.md)) |
+
+Re-checked over 3 repeated runs on Nova Lite: original prompt 57% full / 50% holdout; Sonnet-ported prompt
+**85% full / 71% holdout**. Total cost of the two Sonnet porting runs: about $1.75.
+
+What we learned:
+- **Porting a prompt to a smaller model mostly means making implicit rules explicit** (relative-date tables, raw JSON
+  output, decimal handling). A judge that forbids every addition makes porting impossible. modelbot blocks
+  contradictions and removals, and lists additions in the PR for a human to confirm.
+- **Finer-grained rule auditing needs a stronger judge.** With the severity-based schema, Nova Pro missed the wrong rule once.
+- **Weak agents game evals.** Nova Pro kept pasting dev cases into the prompt. Sonnet wrote synthetic examples, but still
+  reused fragments such as "다음 주 수요일", and every case shares one Received date, which flatters date examples. Vary
+  such fixtures in your own suites.
+
 ## Run in GitHub Actions
 
 1. Deploy the OIDC role (least privilege, trusted only for `main` of your repo, so PRs and forks cannot assume it):
