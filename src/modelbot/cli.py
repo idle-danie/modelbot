@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -12,7 +13,7 @@ import yaml
 
 from modelbot import discovery
 from modelbot.config import Config, ConfigError, Target, load_config
-from modelbot.decision import decide, portable
+from modelbot.decision import Recommendation, decide, portable
 from modelbot.porter import port_prompt, strands_reviser, strands_rule_checker
 from modelbot.pricing import BudgetTracker, cost_usd, has_price, load_prices
 from modelbot.report import render_markdown
@@ -108,29 +109,30 @@ def scan(
             typer.echo(f"    • {c.invoke_id}")
 
 
-@app.command(name="eval")
-def eval_cmd(
-    config: ConfigOpt = Path("modelbot.yaml"),
-    candidate: Annotated[
-        list[str] | None, typer.Option("--candidate", help="Evaluate only these model / profile IDs")
-    ] = None,
-    max_candidates: Annotated[int, typer.Option(help="Cap on auto-selected candidates per target")] = 3,
-    prices_file: Annotated[Path | None, typer.Option("--prices", help="Price override YAML")] = None,
-    output: Annotated[Path, typer.Option("--output", "-o")] = Path("modelbot-report.md"),
-    no_port: Annotated[bool, typer.Option("--no-port", help="Skip agent-driven prompt porting")] = False,
-    repeats: Annotated[int | None, typer.Option(help="Run each case N times (overrides config)")] = None,
-) -> None:
-    """Evaluate baseline and candidates on each target's eval suite and write a report."""
+@dataclass
+class Outcome:
+    target: Target
+    baseline_id: str
+    prompt: str
+    rec: Recommendation
+
+
+def _evaluate_all(
+    cfg: Config,
+    root: Path,
+    candidate: list[str] | None,
+    max_candidates: int,
+    prices: dict,
+    budget: BudgetTracker,
+    no_port: bool,
+    repeats: int | None,
+) -> list[Outcome]:
     import boto3
 
-    cfg = _load(config)
-    root = config.parent
-    prices = load_prices(override=prices_file)
     runtime = boto3.client("bedrock-runtime", region_name=cfg.region)
-    budget = BudgetTracker(cfg.budget_usd)
     catalog, scans = _scan(cfg, root)
 
-    reports = []
+    outcomes = []
     for target, sc in zip(cfg.targets, scans, strict=True):
         prompt = _read_prompt(root, target)
         cases = load_cases(root / target.evals)
@@ -204,16 +206,45 @@ def eval_cmd(
                 results = [rerun if r is best else r for r in results]
                 rec = decide(target, baseline, results, prices, urgent=sc.urgent, baseline_status=sc.status)
             rec.ported[best.model_id] = ported
-        reports.append(render_markdown(rec, prices))
+        outcomes.append(Outcome(target, sc.baseline, prompt, rec))
+    return outcomes
 
-    md = "\n---\n\n".join(reports)
+
+def _spend_line(budget: BudgetTracker, cfg: Config) -> str:
+    return (
+        f"requests: {budget.requests} · estimated spend: ${budget.spent_usd:.4f} of ${cfg.budget_usd:.2f}"
+        + (" (budget exhausted — results are partial)" if budget.exhausted else "")
+    )
+
+
+CandidateOpt = Annotated[
+    list[str] | None, typer.Option("--candidate", help="Evaluate only these model / profile IDs")
+]
+MaxCandidatesOpt = Annotated[int, typer.Option(help="Cap on auto-selected candidates per target")]
+PricesOpt = Annotated[Path | None, typer.Option("--prices", help="Price override YAML")]
+NoPortOpt = Annotated[bool, typer.Option("--no-port", help="Skip agent-driven prompt porting")]
+RepeatsOpt = Annotated[int | None, typer.Option(help="Run each case N times (overrides config)")]
+
+
+@app.command(name="eval")
+def eval_cmd(
+    config: ConfigOpt = Path("modelbot.yaml"),
+    candidate: CandidateOpt = None,
+    max_candidates: MaxCandidatesOpt = 3,
+    prices_file: PricesOpt = None,
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("modelbot-report.md"),
+    no_port: NoPortOpt = False,
+    repeats: RepeatsOpt = None,
+) -> None:
+    """Evaluate baseline and candidates on each target's eval suite and write a report."""
+    cfg = _load(config)
+    prices = load_prices(override=prices_file)
+    budget = BudgetTracker(cfg.budget_usd)
+    outcomes = _evaluate_all(cfg, config.parent, candidate, max_candidates, prices, budget, no_port, repeats)
+    md = "\n---\n\n".join(render_markdown(o.rec, prices) for o in outcomes)
     output.write_text(md)
     typer.echo(md)
-    typer.echo(
-        f"requests: {budget.requests} · estimated spend: ${budget.spent_usd:.4f} of ${cfg.budget_usd:.2f}"
-        + (" (budget exhausted — results are partial)" if budget.exhausted else ""),
-        err=True,
-    )
+    typer.echo(_spend_line(budget, cfg), err=True)
 
 
 @app.command()
@@ -290,10 +321,58 @@ def port(
 
 
 @app.command()
-def run() -> None:
-    """scan → eval → port → decide → report/PR (tasks 6–8)."""
-    typer.echo("not implemented yet — see .kiro/specs/modelbot/tasks.md", err=True)
-    raise typer.Exit(1)
+def run(
+    config: ConfigOpt = Path("modelbot.yaml"),
+    candidate: CandidateOpt = None,
+    max_candidates: MaxCandidatesOpt = 3,
+    prices_file: PricesOpt = None,
+    no_port: NoPortOpt = False,
+    repeats: RepeatsOpt = None,
+    open_pr: Annotated[
+        bool, typer.Option("--open-pr", help="Open or update a pull request per upgrade")
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show planned file changes; write nothing")
+    ] = False,
+) -> None:
+    """scan → eval → port → decide, then open a PR for each recommended upgrade."""
+    from modelbot import github_pr
+
+    cfg = _load(config)
+    root = config.parent
+    prices = load_prices(override=prices_file)
+    budget = BudgetTracker(cfg.budget_usd)
+    outcomes = _evaluate_all(cfg, root, candidate, max_candidates, prices, budget, no_port, repeats)
+    typer.echo(_spend_line(budget, cfg), err=True)
+
+    for o in outcomes:
+        body = render_markdown(o.rec, prices)
+        if o.rec.chosen is None:
+            typer.echo(f"[{o.target.name}] no recommended upgrade; no PR", err=True)
+            typer.echo(body)
+            continue
+        new_id = o.rec.chosen.model_id
+        ported = o.rec.ported.get(new_id)
+        changes = github_pr.plan_changes(
+            root, o.target, o.baseline_id, new_id, ported.revised if ported and ported.accepted else None
+        )
+        if dry_run or not open_pr:
+            typer.echo(
+                f"[{o.target.name}] planned changes ({'dry run' if dry_run else 'pass --open-pr to apply'}):"
+            )
+            for ch in changes:
+                typer.echo(f"  ~ {ch.path}")
+            typer.echo(body)
+            continue
+        url = github_pr.open_or_update_pr(
+            github_pr.connect(root),
+            branch=github_pr.branch_name(o.target.name, new_id),
+            title=github_pr.pr_title(o.target.name, o.baseline_id, new_id),
+            body=body + "\n---\n<sub>Opened by [modelbot](https://github.com/idle-danie/modelbot). "
+            "Review prompt changes before merging.</sub>\n",
+            changes=changes,
+        )
+        typer.echo(f"[{o.target.name}] {url}")
 
 
 if __name__ == "__main__":
