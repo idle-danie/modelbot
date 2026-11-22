@@ -17,7 +17,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from modelbot.config import PortingPolicy
-from modelbot.runner import Case, SuiteResult
+from modelbot.runner import Case, SuiteResult, base_case_id
 
 PORTER_SYSTEM_PROMPT = """\
 You adapt an existing system prompt so that it performs well on a different foundation model.
@@ -165,7 +165,7 @@ def summarize_failures(result: SuiteResult, cases: list[Case]) -> str:
         failures.append(
             {
                 "case": r.case_id,
-                "input": inputs[r.case_id].input[:_MAX_CHARS],
+                "input": inputs[base_case_id(r.case_id)].input[:_MAX_CHARS],
                 "output": (r.error or r.output)[:_MAX_CHARS],
                 "why": [g.detail for g in r.grader_results if not g.passed] or [r.error or "failed"],
             }

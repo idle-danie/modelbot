@@ -46,6 +46,7 @@ uv run modelbot scan          # deprecated baselines + candidates (needs AWS cre
 uv run modelbot eval          # run evals on baseline + top candidates, write modelbot-report.md
 uv run modelbot eval --candidate us.anthropic.claude-haiku-4-5-20251001-v1:0   # pick candidates explicitly
 uv run modelbot port --candidate amazon.nova-lite-v1:0   # adapt the prompt to one model, regardless of thresholds
+uv run modelbot eval --repeats 3   # run each case 3x; pass rate is averaged and flaky cases are listed
 ```
 
 Every run prints its request count and estimated spend, and stops issuing new requests once `budget_usd` is reached.
@@ -75,8 +76,8 @@ First real run, `examples/email-extractor`, Nova Lite with Nova Pro as the porti
 | Full suite | 55% | 65% |
 | Attempts | | 4 (1 accepted, 3 rejected for copying eval cases) |
 
-With 8 holdout cases a one-case change is close to run-to-run noise. Larger suites and repeated runs (planned) make
-these numbers trustworthy.
+With 8 holdout cases a one-case change is close to run-to-run noise: at temperature 0, Nova Micro still flipped
+3 of 20 cases between runs. Use `repeats` and larger suites before trusting small deltas.
 
 > ⚠️ **Evals alone did not catch everything.** The accepted prompt in that run introduced a *wrong* business rule
 > (`"$89.50" -> 8950`) and a meaningless meta-instruction. Scores did not drop because the affected case was already

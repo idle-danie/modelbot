@@ -71,3 +71,25 @@ def test_concurrency_runs_in_parallel_and_preserves_order():
     r = run_suite(SlowClient(), "m", "sys", CASES, concurrency=8)
     assert time.perf_counter() - started < 0.05 * len(CASES) / 2
     assert [x.case_id for x in r.results] == [c.id for c in CASES]
+
+
+def test_repeats_average_and_flag_flaky_cases():
+    class Alternating:
+        """Case c0 fails on its first call and passes on its second; every other case passes."""
+
+        def __init__(self):
+            self.seen: dict[str, int] = {}
+            self._lock = threading.Lock()
+
+        def converse(self, messages, **kwargs):
+            text = messages[0]["content"][0]["text"]
+            with self._lock:
+                self.seen[text] = self.seen.get(text, 0) + 1
+                nth = self.seen[text]
+            ok = text != "in 0" or nth == 2
+            return {**OK, "output": {"message": {"content": [{"text": "ok" if ok else "no"}]}}}
+
+    r = run_suite(Alternating(), "m", "sys", CASES[:4], repeats=2)
+    assert len(r.results) == 8 and r.repeats == 2
+    assert r.pass_rate == 7 / 8
+    assert r.flaky == ["c0"]

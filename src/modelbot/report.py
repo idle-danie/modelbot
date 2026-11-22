@@ -55,6 +55,11 @@ def _caveats(suites: list[SuiteResult]) -> list[str]:
                 f"- `{s.model_id}`: {len(s.errored)} case(s) errored and count as failed "
                 f"(e.g. `{first[:140]}`)"
             )
+        if s.flaky:
+            notes.append(
+                f"- `{s.model_id}`: {len(s.flaky)} case(s) gave different results across repeats: "
+                + ", ".join(s.flaky[:5])
+            )
         if s.partial:
             notes.append(f"- `{s.model_id}`: budget exhausted — evaluated {len(s.results)} case(s) only")
     return ["", "**Caveats**", "", *notes] if notes else []
@@ -174,7 +179,8 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
         "",
         comparison_table(rec.baseline, rec.chosen, prices),
         "",
-        f"<sub>eval suite `{rec.baseline.suite_hash}` · {len(rec.baseline.results)} cases</sub>",
+        f"<sub>eval suite `{rec.baseline.suite_hash}` · "
+        f"{len(rec.baseline.results) // rec.baseline.repeats} cases × {rec.baseline.repeats} run(s)</sub>",
     ]
     lines += candidates_table(rec, prices)
     for pr in rec.ported.values():

@@ -70,7 +70,7 @@
   - _Requirements: 8.2, 8.3, 9.1, 9.2_
 
 - [ ] 10. Hardening
-  - [ ] 10.0 `repeats` option: run each case N times and report pass-rate variance (observed 1-in-~6 flakes at temperature 0)
+  - [x] 10.0 `repeats` option: run each case N times and report pass-rate variance (observed 1-in-~6 flakes at temperature 0)
   - [ ] 10.1 Opt-in integration test against real Bedrock
   - [ ] 10.2 Run summary (requests, tokens, spend); redact I/O unless `--verbose`
   - _Requirements: 9.3, 9.4_

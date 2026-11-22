@@ -37,6 +37,7 @@ class Target(BaseModel):
     prompts: list[str] = Field(min_length=1)
     evals: str
     threshold: float = Field(0.9, ge=0, le=1)
+    repeats: int = Field(1, ge=1, le=10)
     tolerance: float = Field(0.02, ge=0, le=1)
     porting: PortingPolicy = Field(default_factory=PortingPolicy)
     limits: Limits = Field(default_factory=Limits)

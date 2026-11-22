@@ -68,6 +68,15 @@ class SuiteResult:
     suite_hash: str
     results: list[CaseResult] = field(default_factory=list)
     partial: bool = False
+    repeats: int = 1
+
+    @property
+    def flaky(self) -> list[str]:
+        """Base case IDs that both passed and failed across repeats."""
+        outcomes: dict[str, set[bool]] = {}
+        for r in self.results:
+            outcomes.setdefault(base_case_id(r.case_id), set()).add(r.passed)
+        return sorted(cid for cid, seen in outcomes.items() if len(seen) == 2)
 
     @property
     def pass_rate(self) -> float:
@@ -107,6 +116,11 @@ def load_cases(path: str | Path) -> list[Case]:
             d = json.loads(line)
             cases.append(Case(id=d["id"], input=d["input"], graders=d["graders"]))
     return cases
+
+
+def base_case_id(case_id: str) -> str:
+    """Strip the '#<n>' repeat suffix."""
+    return case_id.split("#", 1)[0]
 
 
 def digest(text: str) -> str:
@@ -180,11 +194,16 @@ def run_suite(
     budget: BudgetTracker | None = None,
     retry: RetryPolicy = RetryPolicy(),
     sleep: Callable[[float], None] = time.sleep,
+    repeats: int = 1,
 ) -> SuiteResult:
     """Run all cases with bounded concurrency; stop submitting new cases once the budget is exhausted."""
     if budget is not None and prices is None:
         raise ValueError("budget tracking requires prices")
 
+    original = cases
+    if repeats > 1:
+        # Each repeat is a separate case ('id#n') so pass rate averages over runs.
+        cases = [Case(f"{c.id}#{k}", c.input, c.graders) for k in range(1, repeats + 1) for c in cases]
     queue = iter(cases)
     done_by_id: dict[str, CaseResult] = {}
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
@@ -209,7 +228,7 @@ def run_suite(
                     budget.add(cost_usd(prices, model_id, r.input_tokens, r.output_tokens))
                 submit_next()
 
-    result = SuiteResult(model_id, digest(system_prompt), suite_hash(cases))
+    result = SuiteResult(model_id, digest(system_prompt), suite_hash(original), repeats=repeats)
     result.results = [done_by_id[c.id] for c in cases if c.id in done_by_id]
     result.partial = len(result.results) < len(cases)
     return result

@@ -118,6 +118,7 @@ def eval_cmd(
     prices_file: Annotated[Path | None, typer.Option("--prices", help="Price override YAML")] = None,
     output: Annotated[Path, typer.Option("--output", "-o")] = Path("modelbot-report.md"),
     no_port: Annotated[bool, typer.Option("--no-port", help="Skip agent-driven prompt porting")] = False,
+    repeats: Annotated[int | None, typer.Option(help="Run each case N times (overrides config)")] = None,
 ) -> None:
     """Evaluate baseline and candidates on each target's eval suite and write a report."""
     import boto3
@@ -141,11 +142,22 @@ def eval_cmd(
             typer.echo(f"{target.name}: baseline {sc.baseline} has no price; add it with --prices", err=True)
             raise typer.Exit(2)
 
-        def run(model_id: str, prompt: str = prompt, cases: list = cases, quiet: bool = False):
+        n_runs = repeats or target.repeats
+
+        def run(
+            model_id: str, prompt: str = prompt, cases: list = cases, quiet: bool = False, n: int = n_runs
+        ):
             if not quiet:
                 typer.echo(f"  evaluating {model_id} on {len(cases)} cases …", err=True)
             return run_suite(
-                runtime, model_id, prompt, cases, concurrency=cfg.concurrency, prices=prices, budget=budget
+                runtime,
+                model_id,
+                prompt,
+                cases,
+                concurrency=cfg.concurrency,
+                prices=prices,
+                budget=budget,
+                repeats=n,
             )
 
         def track_agent_usage(model_id: str, input_tokens: int, output_tokens: int) -> None:
@@ -240,7 +252,16 @@ def port(
     cases = load_cases(root / target.evals)
 
     def evaluate(p: str, cs: list) -> Any:
-        return run_suite(runtime, candidate, p, cs, concurrency=cfg.concurrency, prices=prices, budget=budget)
+        return run_suite(
+            runtime,
+            candidate,
+            p,
+            cs,
+            concurrency=cfg.concurrency,
+            prices=prices,
+            budget=budget,
+            repeats=target.repeats,
+        )
 
     def on_usage(model_id: str, input_tokens: int, output_tokens: int) -> None:
         budget.add(cost_usd(prices, model_id, input_tokens, output_tokens))
