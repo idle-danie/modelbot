@@ -121,7 +121,8 @@ Recommendation(target, baseline, chosen: str | None, ranked: list[SuiteResult], 
 ## IAM (minimum)
 
 ```
-bedrock:ListFoundationModels, bedrock:ListInferenceProfiles, bedrock:InvokeModel
+bedrock:ListFoundationModels, bedrock:ListInferenceProfiles, bedrock:InvokeModel,
+bedrock:InvokeModelWithResponseStream   # Strands agents stream
 ```
 (`InvokeModel` covers Converse.) Scope `InvokeModel` to allowlisted provider ARNs where possible.
 

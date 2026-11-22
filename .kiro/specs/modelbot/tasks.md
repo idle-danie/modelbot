@@ -64,8 +64,8 @@
   - _Requirements: 7.1–7.5_
 
 - [ ] 9. Distribution
-  - [ ] 9.1 Composite GitHub Action with OIDC
-  - [ ] 9.2 CloudFormation template for the GitHub OIDC role (least privilege)
+  - [x] 9.1 Composite GitHub Action with OIDC
+  - [x] 9.2 CloudFormation template for the GitHub OIDC role (least privilege)
   - [ ] 9.3 Example project runnable end-to-end in 10 minutes
   - [ ] 9.4 README with demo GIF and sample PR
   - _Requirements: 8.2, 8.3, 9.1, 9.2_

@@ -1,0 +1,30 @@
+# Weekly model-upgrade check for the examples in this repository.
+# Inactive until the MODELBOT_ROLE_ARN repository variable is set (see README → "Run in GitHub Actions").
+name: modelbot
+on:
+  schedule:
+    - cron: "0 0 * * 1" # Mondays 00:00 UTC
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC to AWS
+  contents: write # push the upgrade branch
+  pull-requests: write
+
+concurrency: modelbot
+
+jobs:
+  upgrade:
+    if: vars.MODELBOT_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [ticket-classifier, email-extractor]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          role-to-assume: ${{ vars.MODELBOT_ROLE_ARN }}
+          config: examples/${{ matrix.example }}/modelbot.yaml
+          args: --max-candidates 2

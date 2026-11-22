@@ -3,7 +3,7 @@ description: Dependabot for LLMs - eval-gated model upgrades on Amazon Bedrock
 branding: {icon: cpu, color: orange}
 inputs:
   role-to-assume:
-    description: IAM role ARN trusted for GitHub OIDC (see design.md for minimum permissions)
+    description: IAM role ARN trusted for GitHub OIDC (deploy infra/github-oidc-role.yaml)
     required: true
   aws-region:
     description: AWS region for Bedrock
@@ -11,6 +11,12 @@ inputs:
   config:
     description: Path to modelbot.yaml
     default: modelbot.yaml
+  args:
+    description: Extra arguments for `modelbot run`, e.g. "--repeats 3 --max-candidates 2"
+    default: ""
+  github-token:
+    description: Token used to open pull requests
+    default: ${{ github.token }}
 runs:
   using: composite
   steps:
@@ -20,4 +26,8 @@ runs:
         aws-region: ${{ inputs.aws-region }}
     - uses: astral-sh/setup-uv@v6
     - shell: bash
-      run: uvx --from "${{ github.action_path }}" modelbot run --config "${{ inputs.config }}" --open-pr
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        uvx --from "${{ github.action_path }}" modelbot run \
+          --config "${{ inputs.config }}" --open-pr ${{ inputs.args }} | tee -a "$GITHUB_STEP_SUMMARY"

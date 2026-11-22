@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  IAM role that the modelbot GitHub Action assumes through OIDC. Least privilege: list Bedrock models and
+  invoke models only. Trust is limited to one repository and one branch, so pull requests (including from
+  forks) cannot assume it.
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Description: GitHub user or organization, e.g. idle-danie
+  RepositoryName:
+    Type: String
+    Default: modelbot
+  Branch:
+    Type: String
+    Default: main
+    Description: Only workflows running on this branch (schedule / workflow_dispatch / push) can assume the role
+  CreateOIDCProvider:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: Set to false if the account already has the token.actions.githubusercontent.com provider
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  ModelbotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Assumed by the modelbot GitHub Action
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateProvider
+                - !Ref GitHubOIDCProvider
+                - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwner}/${RepositoryName}:ref:refs/heads/${Branch}
+      Policies:
+        - PolicyName: modelbot-bedrock
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Discover
+                Effect: Allow
+                Action:
+                  - bedrock:ListFoundationModels
+                  - bedrock:ListInferenceProfiles
+                Resource: "*"
+              - Sid: Invoke
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:*::foundation-model/*
+                  - !Sub arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:inference-profile/*
+
+Outputs:
+  RoleArn:
+    Description: Set this as the MODELBOT_ROLE_ARN repository variable
+    Value: !GetAtt ModelbotRole.Arn

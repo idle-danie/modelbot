@@ -114,11 +114,32 @@ Eval cases are JSONL with one or more graders (`exact`, `contains`, `regex`, `js
 {"id": "bug-01", "input": "Export returns 500 and our close is blocked!", "graders": [{"type": "json_schema", "schema": {"properties": {"category": {"const": "bug"}, "urgent": {"const": true}}}}]}
 ```
 
+## Run in GitHub Actions
+
+1. Deploy the OIDC role (least privilege, trusted only for `main` of your repo, so PRs and forks cannot assume it):
+   ```bash
+   aws cloudformation deploy --template-file infra/github-oidc-role.yaml --stack-name modelbot-github \
+     --capabilities CAPABILITY_IAM --parameter-overrides GitHubOwner=<you> RepositoryName=<repo>
+   aws cloudformation describe-stacks --stack-name modelbot-github --query "Stacks[0].Outputs"
+   ```
+2. Set the repository variable `MODELBOT_ROLE_ARN` to the role ARN.
+3. Settings → Actions → General → enable "Allow GitHub Actions to create and approve pull requests".
+4. Add a workflow (see [`.github/workflows/modelbot.yml`](.github/workflows/modelbot.yml)):
+   ```yaml
+   - uses: idle-danie/modelbot@main
+     with:
+       role-to-assume: ${{ vars.MODELBOT_ROLE_ARN }}
+       config: modelbot.yaml
+   ```
+
+Example PR opened by modelbot: [#1](https://github.com/idle-danie/modelbot/pull/1).
+
 ## IAM
 
 ```
-bedrock:ListFoundationModels  bedrock:ListInferenceProfiles  bedrock:InvokeModel
+bedrock:ListFoundationModels  bedrock:ListInferenceProfiles  bedrock:InvokeModel  bedrock:InvokeModelWithResponseStream
 ```
+(`InvokeModelWithResponseStream` is used by the Strands porting agent.)
 
 ## Status
 
@@ -131,7 +152,8 @@ for requirements, design, and the task list.
 | `eval` command with concurrency, throttling retries, budget enforcement | ✅ |
 | Prompt porting agent (Strands) with holdout-gated acceptance | ✅ |
 | LLM judge | 🚧 |
-| PR creation, GitHub Action | 🚧 |
+| `run` command, PR creation and update, GitHub Action + OIDC role template | ✅ |
+| JSON report, failing-case section, eval-state cache | 🚧 |
 
 ## License
 
