@@ -140,8 +140,14 @@ def build_task(model_id: str, provider: str, prompt: str, dev_summary: str, hist
     return "\n".join(parts)
 
 
-def strands_reviser(model_id: str, region: str) -> Reviser:
-    """Build a Reviser backed by a Strands agent on Amazon Bedrock."""
+def strands_reviser(
+    model_id: str, region: str, on_usage: Callable[[str, int, int], None] | None = None
+) -> Reviser:
+    """Build a Reviser backed by a Strands agent on Amazon Bedrock.
+
+    `on_usage(model_id, input_tokens, output_tokens)` is called after each attempt so the caller can count the
+    agent's own LLM spend against the run budget.
+    """
 
     def revise(task: str, evaluate_on_dev: Callable[[str], str]) -> PromptRevision:
         from strands import Agent, tool
@@ -169,6 +175,9 @@ def strands_reviser(model_id: str, region: str) -> Reviser:
             callback_handler=None,
         )
         result = agent(task)
+        if on_usage is not None:
+            usage = result.metrics.accumulated_usage
+            on_usage(model_id, usage.get("inputTokens", 0), usage.get("outputTokens", 0))
         if not isinstance(result.structured_output, PromptRevision):
             raise RuntimeError("porting agent returned no structured revision")
         return result.structured_output
@@ -248,3 +257,15 @@ def describe(result: PortingResult) -> dict[str, Any]:
         "holdout_after": result.holdout_after,
         "attempts": [a.__dict__ for a in result.attempts],
     }
+
+
+def porting_report(result: PortingResult, before: SuiteResult, after: SuiteResult, target: str) -> str:
+    from modelbot.report import porting_section
+
+    lines = [
+        f"## ✍️ modelbot port · `{target}` → `{result.model_id}`",
+        "",
+        f"Full-suite pass rate on `{result.model_id}`: **{before.pass_rate:.0%} → {after.pass_rate:.0%}**",
+        *porting_section(result),
+    ]
+    return "\n".join(lines) + "\n"

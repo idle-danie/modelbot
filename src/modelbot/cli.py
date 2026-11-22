@@ -14,7 +14,7 @@ from modelbot import discovery
 from modelbot.config import Config, ConfigError, Target, load_config
 from modelbot.decision import decide, portable
 from modelbot.porter import port_prompt, strands_reviser
-from modelbot.pricing import BudgetTracker, has_price, load_prices
+from modelbot.pricing import BudgetTracker, cost_usd, has_price, load_prices
 from modelbot.report import render_markdown
 from modelbot.runner import load_cases, run_suite
 
@@ -135,6 +135,14 @@ def eval_cmd(
                 runtime, model_id, prompt, cases, concurrency=cfg.concurrency, prices=prices, budget=budget
             )
 
+        def track_agent_usage(model_id: str, input_tokens: int, output_tokens: int) -> None:
+            if has_price(prices, model_id):
+                budget.add(cost_usd(prices, model_id, input_tokens, output_tokens))
+            else:
+                typer.echo(
+                    f"  warning: no price for porting model {model_id}; its spend is not tracked", err=True
+                )
+
         typer.echo(f"[{target.name}]", err=True)
         baseline = run(sc.baseline)
         results = []
@@ -162,7 +170,7 @@ def eval_cmd(
                 cases=cases,
                 policy=target.porting,
                 evaluate=lambda p, cs, m=best.model_id: run(m, prompt=p, cases=cs, quiet=True),
-                reviser=strands_reviser(cfg.porting_model, cfg.region),
+                reviser=strands_reviser(cfg.porting_model, cfg.region, on_usage=track_agent_usage),
                 should_stop=lambda: budget.exhausted,
             )
             if ported.accepted:
@@ -178,6 +186,69 @@ def eval_cmd(
     typer.echo(
         f"requests: {budget.requests} · estimated spend: ${budget.spent_usd:.4f} of ${cfg.budget_usd:.2f}"
         + (" (budget exhausted — results are partial)" if budget.exhausted else ""),
+        err=True,
+    )
+
+
+@app.command()
+def port(
+    candidate: Annotated[str, typer.Option("--candidate", help="Model or inference profile ID to port to")],
+    config: ConfigOpt = Path("modelbot.yaml"),
+    target_name: Annotated[str | None, typer.Option("--target", help="Target name (default: first)")] = None,
+    porting_model: Annotated[str | None, typer.Option(help="Override porting_model from config")] = None,
+    prices_file: Annotated[Path | None, typer.Option("--prices", help="Price override YAML")] = None,
+    output: Annotated[Path, typer.Option("--output", "-o")] = Path("modelbot-port.md"),
+) -> None:
+    """Adapt a target's prompt to one specific candidate model, regardless of thresholds."""
+    import boto3
+
+    from modelbot.porter import porting_report
+
+    cfg = _load(config)
+    root = config.parent
+    target = next((t for t in cfg.targets if target_name in (None, t.name)), None)
+    if target is None:
+        typer.echo(f"no target named {target_name!r}", err=True)
+        raise typer.Exit(2)
+    agent_model = porting_model or cfg.porting_model
+    if not agent_model:
+        typer.echo("set porting_model in modelbot.yaml or pass --porting-model", err=True)
+        raise typer.Exit(2)
+    prices = load_prices(override=prices_file)
+    for m in (candidate, agent_model):
+        if not has_price(prices, m):
+            typer.echo(f"no price for {m}; add it with --prices", err=True)
+            raise typer.Exit(2)
+
+    runtime = boto3.client("bedrock-runtime", region_name=cfg.region)
+    budget = BudgetTracker(cfg.budget_usd)
+    prompt = _read_prompt(root, target)
+    cases = load_cases(root / target.evals)
+
+    def evaluate(p: str, cs: list) -> Any:
+        return run_suite(runtime, candidate, p, cs, concurrency=cfg.concurrency, prices=prices, budget=budget)
+
+    def on_usage(model_id: str, input_tokens: int, output_tokens: int) -> None:
+        budget.add(cost_usd(prices, model_id, input_tokens, output_tokens))
+
+    typer.echo(f"[{target.name}] porting prompt to {candidate} with {agent_model} …", err=True)
+    before = evaluate(prompt, cases)
+    result = port_prompt(
+        model_id=candidate,
+        provider=discovery.base_model_id(candidate).split(".", 1)[0],
+        prompt=prompt,
+        cases=cases,
+        policy=target.porting,
+        evaluate=evaluate,
+        reviser=strands_reviser(agent_model, cfg.region, on_usage=on_usage),
+        should_stop=lambda: budget.exhausted,
+    )
+    after = evaluate(result.revised, cases) if result.accepted else before
+    md = porting_report(result, before, after, target.name)
+    output.write_text(md)
+    typer.echo(md)
+    typer.echo(
+        f"requests: {budget.requests} · estimated spend: ${budget.spent_usd:.4f} of ${cfg.budget_usd:.2f}",
         err=True,
     )
 

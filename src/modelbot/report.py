@@ -50,7 +50,11 @@ def _caveats(suites: list[SuiteResult]) -> list[str]:
     notes = []
     for s in suites:
         if s.errored:
-            notes.append(f"- `{s.model_id}`: {len(s.errored)} case(s) errored and count as failed")
+            first = s.errored[0].error or ""
+            notes.append(
+                f"- `{s.model_id}`: {len(s.errored)} case(s) errored and count as failed "
+                f"(e.g. `{first[:140]}`)"
+            )
         if s.partial:
             notes.append(f"- `{s.model_id}`: budget exhausted — evaluated {len(s.results)} case(s) only")
     return ["", "**Caveats**", "", *notes] if notes else []
@@ -99,6 +103,26 @@ def porting_section(pr: PortingResult) -> list[str]:
     return lines
 
 
+def candidates_table(rec: Recommendation, prices: dict[str, Price]) -> list[str]:
+    rows = []
+    for s in [rec.baseline, *rec.ranked]:
+        pr = rec.ported.get(s.model_id)
+        label = f"`{s.model_id}`" + (" (ported prompt)" if pr and pr.accepted else "")
+        label += " ⭐" if s is rec.chosen else ""
+        rows.append(
+            f"| {label} | {s.pass_rate:.0%} | {s.p95_ms / 1000:.1f}s | ${s.cost_per_1k(prices):.2f} |"
+        )
+    return [
+        "",
+        "<details><summary>All evaluated models</summary>",
+        "",
+        "| Model | Pass rate | p95 | Cost / 1k |",
+        "|---|---|---|---|",
+        *rows,
+        "</details>",
+    ]
+
+
 def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
     lines = [f"## 🤖 modelbot · `{rec.target}`", ""]
     if rec.baseline_status == "MISSING":
@@ -115,6 +139,7 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
             lines += ["", "Manual review required: the baseline is deprecated."]
         if rec.ranked:
             lines += ["", "Best candidate:", "", comparison_table(rec.baseline, rec.ranked[0], prices)]
+        lines += candidates_table(rec, prices)
         for pr in rec.ported.values():
             lines += porting_section(pr)
         lines += _caveats([rec.baseline, *rec.ranked])
@@ -126,6 +151,7 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
         "",
         f"<sub>eval suite `{rec.baseline.suite_hash}` · {len(rec.baseline.results)} cases</sub>",
     ]
+    lines += candidates_table(rec, prices)
     for pr in rec.ported.values():
         lines += porting_section(pr)
     lines += _caveats([rec.baseline, rec.chosen])

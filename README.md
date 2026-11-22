@@ -45,10 +45,13 @@ cd examples/ticket-classifier
 uv run modelbot scan          # deprecated baselines + candidates (needs AWS credentials)
 uv run modelbot eval          # run evals on baseline + top candidates, write modelbot-report.md
 uv run modelbot eval --candidate us.anthropic.claude-haiku-4-5-20251001-v1:0   # pick candidates explicitly
+uv run modelbot port --candidate amazon.nova-lite-v1:0   # adapt the prompt to one model, regardless of thresholds
 ```
 
 Every run prints its request count and estimated spend, and stops issuing new requests once `budget_usd` is reached.
-Candidates without an entry in `prices.yaml` are skipped. Add current prices for your region with `--prices my-prices.yaml`.
+Candidates without an entry in `prices.yaml` are skipped. The bundled table lists us-east-1 on-demand prices taken from the
+AWS Price List API; add others with `--prices my-prices.yaml`. Anthropic models on Bedrock require a one-time use-case
+form per account; until it is approved those candidates are reported as errored and skipped.
 
 ## The porting agent
 

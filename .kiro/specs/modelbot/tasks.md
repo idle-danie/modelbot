@@ -41,6 +41,9 @@
   - [x] 6.3 Outer acceptance loop (holdout improvement, regression limit, max iterations)
   - [x] 6.4 Prompt diff + rationale in results
   - [x] 6.5 Wire porting into `eval` for near-miss candidates; `--no-port`
+  - [x] 6.6 `port` command: adapt a prompt to one chosen model regardless of thresholds
+  - [x] 6.7 Count the porting agent's own token usage against the run budget
+  - [ ] 6.8 Harder example where prompt porting measurably matters (current example saturates at ~100%)
   - _Requirements: 5.1–5.6_
 
 - [ ] 7. Decision
@@ -63,6 +66,7 @@
   - _Requirements: 8.2, 8.3, 9.1, 9.2_
 
 - [ ] 10. Hardening
+  - [ ] 10.0 `repeats` option: run each case N times and report pass-rate variance (observed 1-in-~6 flakes at temperature 0)
   - [ ] 10.1 Opt-in integration test against real Bedrock
   - [ ] 10.2 Run summary (requests, tokens, spend); redact I/O unless `--verbose`
   - _Requirements: 9.3, 9.4_

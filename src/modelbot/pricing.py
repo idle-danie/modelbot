@@ -25,16 +25,21 @@ def load_prices(path: str | Path = DEFAULT_TABLE, override: str | Path | None = 
     for p in (path, override):
         if p is not None:
             raw = yaml.safe_load(Path(p).read_text()) or {}
-            prices.update({base_model_id(k): Price(**v) for k, v in raw.get("models", {}).items()})
+            prices.update({k: Price(**v) for k, v in raw.get("models", {}).items()})
     return prices
 
 
+def price_for(prices: dict[str, Price], model_id: str) -> Price | None:
+    """Exact ID (e.g. an inference profile) first, then the base model ID."""
+    return prices.get(model_id) or prices.get(base_model_id(model_id))
+
+
 def has_price(prices: dict[str, Price], model_id: str) -> bool:
-    return base_model_id(model_id) in prices
+    return price_for(prices, model_id) is not None
 
 
 def cost_usd(prices: dict[str, Price], model_id: str, input_tokens: int, output_tokens: int) -> float:
-    price = prices.get(base_model_id(model_id))
+    price = price_for(prices, model_id)
     if price is None:
         raise KeyError(f"no price for {model_id}; add it to prices.yaml or your override file")
     return (input_tokens * price.input_per_1m + output_tokens * price.output_per_1m) / 1_000_000

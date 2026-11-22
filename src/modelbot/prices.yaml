@@ -1,8 +1,19 @@
-# USD per 1M tokens, on-demand. ILLUSTRATIVE VALUES — verify at https://aws.amazon.com/bedrock/pricing/
-# and override with --prices <file> for your region and contract.
+# USD per 1M tokens, on-demand, us-east-1.
+# Source: AWS Price List API (services AmazonBedrock / AmazonBedrockFoundationModels), checked 2026-11-22.
+# Keys may be a base model ID or an inference profile ID; profile entries take precedence
+# (regional "us." profiles are priced ~10% above "global." for some models).
+# Override or extend with --prices <file> for your region and contract.
 models:
+  # Anthropic
   anthropic.claude-3-5-haiku-20241022-v1:0: {input_per_1m: 0.80, output_per_1m: 4.00}
+  us.anthropic.claude-3-5-haiku-20241022-v1:0: {input_per_1m: 0.80, output_per_1m: 4.00}
   anthropic.claude-haiku-4-5-20251001-v1:0: {input_per_1m: 1.00, output_per_1m: 5.00}
-  anthropic.claude-sonnet-4-5-20250929-v1:0: {input_per_1m: 3.00, output_per_1m: 15.00}
+  global.anthropic.claude-haiku-4-5-20251001-v1:0: {input_per_1m: 1.00, output_per_1m: 5.00}
+  us.anthropic.claude-haiku-4-5-20251001-v1:0: {input_per_1m: 1.10, output_per_1m: 5.50}
+  anthropic.claude-sonnet-4-6: {input_per_1m: 3.00, output_per_1m: 15.00}
+  global.anthropic.claude-sonnet-4-6: {input_per_1m: 3.00, output_per_1m: 15.00}
+  us.anthropic.claude-sonnet-4-6: {input_per_1m: 3.30, output_per_1m: 16.50}
+  # Amazon
+  amazon.nova-micro-v1:0: {input_per_1m: 0.035, output_per_1m: 0.14}
   amazon.nova-lite-v1:0: {input_per_1m: 0.06, output_per_1m: 0.24}
   amazon.nova-pro-v1:0: {input_per_1m: 0.80, output_per_1m: 3.20}
