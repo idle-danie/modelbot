@@ -2,7 +2,7 @@ import json
 
 from modelbot.config import PortingPolicy
 from modelbot.graders import GraderResult
-from modelbot.porter import PromptRevision, port_prompt, split_cases
+from modelbot.porter import PromptRevision, RuleCheck, port_prompt, split_cases
 from modelbot.runner import Case, CaseResult, SuiteResult
 
 CASES = [Case(f"c{i}", f"input-{i}", []) for i in range(10)]
@@ -127,3 +127,48 @@ def test_delimiters_are_stripped():
     from modelbot.porter import clean_revision
 
     assert clean_revision("<current_prompt>\nHello\n</current_prompt>") == "Hello"
+
+
+def test_rule_checker_rejects_before_spending_on_evals():
+    calls = {"eval": 0}
+
+    def counting_eval(prompt, cases):
+        calls["eval"] += 1
+        return evaluate(prompt, cases)
+
+    def checker(original, revised):
+        bad = "8950" in revised
+        return RuleCheck(
+            preserved=not bad,
+            violations=['amount example "$89.50" -> 8950 contradicts the number rule'] if bad else [],
+        )
+
+    r = port_prompt(
+        model_id="cand",
+        provider="amazon",
+        prompt="Classify.",
+        cases=CASES,
+        policy=PortingPolicy(max_iterations=1),
+        evaluate=counting_eval,
+        reviser=reviser_returning(f"\n{FIX} $89.50 -> 8950", []),
+        rule_checker=checker,
+    )
+    assert not r.accepted
+    assert r.attempts[0].reason.startswith("rejected: changes business rules")
+    assert r.attempts[0].violations
+    # baseline holdout + baseline dev + 1 tool call by the fake reviser; no evals of the rejected revision
+    assert calls["eval"] == 3
+
+
+def test_rule_checker_allows_faithful_revision():
+    r = port_prompt(
+        model_id="cand",
+        provider="amazon",
+        prompt="Classify.",
+        cases=CASES,
+        policy=PortingPolicy(max_iterations=1),
+        evaluate=evaluate,
+        reviser=reviser_returning("\n" + FIX, []),
+        rule_checker=lambda o, rv: RuleCheck(preserved=True),
+    )
+    assert r.accepted

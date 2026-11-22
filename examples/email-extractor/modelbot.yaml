@@ -3,7 +3,8 @@
 region: us-east-1
 budget_usd: 1.0
 concurrency: 4
-porting_model: amazon.nova-pro-v1:0   # switch to a Claude model once your account has Anthropic access
+porting_model: amazon.nova-pro-v1:0   # agent that rewrites the prompt
+judge_model: amazon.nova-pro-v1:0     # audits rewrites for business-rule changes; must differ from the candidate
 
 candidates:
   providers: [anthropic, amazon]

@@ -81,7 +81,14 @@ these numbers trustworthy.
 > ⚠️ **Evals alone did not catch everything.** The accepted prompt in that run introduced a *wrong* business rule
 > (`"$89.50" -> 8950`) and a meaningless meta-instruction. Scores did not drop because the affected case was already
 > failing. Ported prompts must be reviewed by a human before merging, which is why modelbot opens a PR instead of
-> pushing. An automated rule-preservation check (task 6.11) is next.
+> pushing.
+
+**Rule-preservation check.** Before any eval money is spent on a revision, a pinned `judge_model` compares it with the
+*original* prompt and rejects revisions that add, drop, or change business rules. On the real bad revision above, a
+Nova Pro judge flagged `"$89.50" -> 8950` in 2/2 runs and passed a faithful rewording in 2/2 runs. With the guards on,
+the same porting run rejected all four attempts (three copied eval cases, one changed rules)
+([report](examples/email-extractor/SAMPLE-port-report-with-guards.md)). The Nova Pro judge is conservative: it also
+flagged a few correct clarifications. A stronger judge model reduces that.
 
 ## Configuration
 

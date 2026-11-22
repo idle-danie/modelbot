@@ -13,7 +13,7 @@ import yaml
 from modelbot import discovery
 from modelbot.config import Config, ConfigError, Target, load_config
 from modelbot.decision import decide, portable
-from modelbot.porter import port_prompt, strands_reviser
+from modelbot.porter import port_prompt, strands_reviser, strands_rule_checker
 from modelbot.pricing import BudgetTracker, cost_usd, has_price, load_prices
 from modelbot.report import render_markdown
 from modelbot.runner import load_cases, run_suite
@@ -46,6 +46,19 @@ def current_model(target_file: Path, key: str | None, pattern: str | None) -> st
 
 def _read_prompt(root: Path, target: Target) -> str:
     return "\n\n".join((root / p).read_text().strip() for p in target.prompts)
+
+
+def _rule_checker(cfg: Config, candidate: str, on_usage: Any) -> Any:
+    """Judge-backed rule check (None without a judge). The judge must not be the candidate (R4.3)."""
+    if not cfg.judge_model:
+        typer.echo(
+            "  warning: no judge_model configured; ported prompts are not checked for rule changes", err=True
+        )
+        return None
+    if discovery.base_model_id(cfg.judge_model) == discovery.base_model_id(candidate):
+        typer.echo(f"judge_model {cfg.judge_model} must differ from the candidate under evaluation", err=True)
+        raise typer.Exit(2)
+    return strands_rule_checker(cfg.judge_model, cfg.region, on_usage=on_usage)
 
 
 def _scan(cfg: Config, root: Path) -> tuple[dict[str, discovery.ModelInfo], list[discovery.ScanResult]]:
@@ -171,6 +184,7 @@ def eval_cmd(
                 policy=target.porting,
                 evaluate=lambda p, cs, m=best.model_id: run(m, prompt=p, cases=cs, quiet=True),
                 reviser=strands_reviser(cfg.porting_model, cfg.region, on_usage=track_agent_usage),
+                rule_checker=_rule_checker(cfg, best.model_id, track_agent_usage),
                 should_stop=lambda: budget.exhausted,
             )
             if ported.accepted:
@@ -215,7 +229,7 @@ def port(
         typer.echo("set porting_model in modelbot.yaml or pass --porting-model", err=True)
         raise typer.Exit(2)
     prices = load_prices(override=prices_file)
-    for m in (candidate, agent_model):
+    for m in (candidate, agent_model, *([cfg.judge_model] if cfg.judge_model else [])):
         if not has_price(prices, m):
             typer.echo(f"no price for {m}; add it with --prices", err=True)
             raise typer.Exit(2)
@@ -241,6 +255,7 @@ def port(
         policy=target.porting,
         evaluate=evaluate,
         reviser=strands_reviser(agent_model, cfg.region, on_usage=on_usage),
+        rule_checker=_rule_checker(cfg, candidate, on_usage),
         should_stop=lambda: budget.exhausted,
     )
     after = evaluate(result.revised, cases) if result.accepted else before

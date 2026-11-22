@@ -60,6 +60,22 @@ def _caveats(suites: list[SuiteResult]) -> list[str]:
     return ["", "**Caveats**", "", *notes] if notes else []
 
 
+def _cell(text: str, limit: int = 160) -> str:
+    """Single-line, pipe-safe Markdown table cell."""
+    return " ".join(text.split()).replace("|", "\\|")[:limit]
+
+
+def _bullets(items: list[str]) -> list[str]:
+    """Judges sometimes pack several findings into one string; split them into separate bullets."""
+    out = []
+    for item in items:
+        for line in item.splitlines():
+            line = line.strip().lstrip("-• ").strip()
+            if line:
+                out.append(line)
+    return out
+
+
 def porting_section(pr: PortingResult) -> list[str]:
     head = f"### ✍️ Prompt porting for `{pr.model_id}`"
     summary = (
@@ -87,10 +103,19 @@ def porting_section(pr: PortingResult) -> list[str]:
             "</details>",
         ]
     rows = [
-        f"| {a.iteration} | {a.holdout_pass_rate:.0%} | {a.regressions} | {a.reason} | "
-        f"{'; '.join(a.changes)[:160] or '–'} |"
+        f"| {a.iteration} | {a.holdout_pass_rate:.0%} | {a.regressions} | {_cell(a.reason)} | "
+        f"{_cell('; '.join(_bullets(a.changes))) or '–'} |"
         for a in pr.attempts
     ]
+    violations = [f"- attempt {a.iteration}: {v}" for a in pr.attempts for v in _bullets(a.violations)]
+    if violations:
+        lines += [
+            "",
+            "<details><summary>Rejected for changing business rules</summary>",
+            "",
+            *violations,
+            "</details>",
+        ]
     lines += [
         "",
         "<details><summary>Attempts</summary>",
