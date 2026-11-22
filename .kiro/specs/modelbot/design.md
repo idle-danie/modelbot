@@ -68,7 +68,10 @@ targets:
 ### runner (`runner.py`)
 - `run_suite(model_id, prompt, cases, concurrency, budget)` → `SuiteResult`.
 - Thread pool for concurrency; retry `ThrottlingException` with exponential backoff + full jitter (R3.4).
-- A shared `BudgetTracker` estimates spend after every call and raises `BudgetExceeded` (R3.5).
+- A shared `BudgetTracker` estimates spend after every call. The runner checks `exhausted` before submitting
+  each new case, so in-flight requests finish and their results are kept; the suite is marked `partial` (R3.5).
+- Models without on-demand throughput are invoked through a system-defined inference profile, preferring the
+  region's geographic profile (`us.`, `eu.`, `apac.`) over `global.` so data stays in-geo.
 
 ### graders (`graders.py`)
 Registry: `exact`, `contains`, `regex`, `json_schema`, `llm_judge`. A case passes only if all graders pass (R4.4).

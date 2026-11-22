@@ -43,6 +43,16 @@ def comparison_table(base: SuiteResult, cand: SuiteResult, prices: dict[str, Pri
     )
 
 
+def _caveats(suites: list[SuiteResult]) -> list[str]:
+    notes = []
+    for s in suites:
+        if s.errored:
+            notes.append(f"- `{s.model_id}`: {len(s.errored)} case(s) errored and count as failed")
+        if s.partial:
+            notes.append(f"- `{s.model_id}`: budget exhausted — evaluated {len(s.results)} case(s) only")
+    return ["", "**Caveats**", "", *notes] if notes else []
+
+
 def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
     lines = [f"## 🤖 modelbot · `{rec.target}`", ""]
     if rec.urgent:
@@ -53,6 +63,7 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
             lines += ["", "Manual review required: the baseline is deprecated."]
         if rec.ranked:
             lines += ["", "Best candidate:", "", comparison_table(rec.baseline, rec.ranked[0], prices)]
+        lines += _caveats([rec.baseline, *rec.ranked])
         return "\n".join(lines) + "\n"
     lines += [
         f"**Recommended:** `{rec.baseline.model_id}` → `{rec.chosen.model_id}`",
@@ -60,6 +71,7 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
         comparison_table(rec.baseline, rec.chosen, prices),
         "",
         f"<sub>eval suite `{rec.baseline.suite_hash}` · {len(rec.baseline.results)} cases</sub>",
+        *_caveats([rec.baseline, rec.chosen]),
     ]
     # TODO(task 8.2): failing-case and prompt-diff <details> sections; JSON report.
     return "\n".join(lines) + "\n"

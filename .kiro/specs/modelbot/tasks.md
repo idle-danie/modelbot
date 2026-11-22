@@ -12,19 +12,20 @@
 
 - [ ] 3. Model discovery
   - [x] 3.1 `ModelInfo` and catalog parsing from `ListFoundationModels`
-  - [ ] 3.2 Merge inference profiles (`us.` / `apac.` / `global.` prefixes) into the catalog
+  - [x] 3.2 Merge inference profiles (`us.` / `apac.` / `global.` prefixes) into the catalog
   - [x] 3.3 Candidate filtering by provider allowlist, denylist, modalities
   - [x] 3.4 Urgent flag for `LEGACY` baselines
-  - [ ] 3.5 `scan` command: table + JSON output
+  - [x] 3.5 `scan` command: table + JSON output
   - [ ] 3.6 Skip already-evaluated (suite hash cache in `.modelbot/state.json`)
   - _Requirements: 2.1–2.5_
 
-- [ ] 4. Evaluation runner
+- [x] 4. Evaluation runner
   - [x] 4.1 Converse call wrapper returning output, tokens, latency
-  - [ ] 4.2 Thread-pool concurrency
-  - [ ] 4.3 Throttling retry with exponential backoff + full jitter
+  - [x] 4.2 Thread-pool concurrency
+  - [x] 4.3 Throttling retry with exponential backoff + full jitter
   - [x] 4.4 Pricing table and `BudgetTracker`
   - [x] 4.5 Aggregates: pass rate, p50/p95, cost per 1k
+  - [x] 4.6 `eval` command: baseline + candidates → decision → Markdown report
   - _Requirements: 3.1–3.6_
 
 - [ ] 5. Graders

@@ -4,19 +4,42 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import statistics
 import time
+from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 from modelbot import graders
 from modelbot.graders import GraderResult
-from modelbot.pricing import Price, cost_usd
+from modelbot.pricing import BudgetTracker, Price, cost_usd
+
+RETRYABLE_ERRORS = frozenset(
+    {
+        "ThrottlingException",
+        "ServiceUnavailableException",
+        "ModelNotReadyException",
+        "InternalServerException",
+    }
+)
 
 
 class ConverseClient(Protocol):
     def converse(self, **kwargs: Any) -> dict[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    max_attempts: int = 6
+    base_delay_s: float = 1.0
+    max_delay_s: float = 20.0
+
+    def delay(self, attempt: int) -> float:
+        """Exponential backoff with full jitter (attempt starts at 0)."""
+        return random.uniform(0, min(self.max_delay_s, self.base_delay_s * 2**attempt))
 
 
 @dataclass(frozen=True)
@@ -35,6 +58,7 @@ class CaseResult:
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    error: str | None = None
 
 
 @dataclass
@@ -43,13 +67,18 @@ class SuiteResult:
     prompt_hash: str
     suite_hash: str
     results: list[CaseResult] = field(default_factory=list)
+    partial: bool = False
 
     @property
     def pass_rate(self) -> float:
         return sum(r.passed for r in self.results) / len(self.results) if self.results else 0.0
 
+    @property
+    def errored(self) -> list[CaseResult]:
+        return [r for r in self.results if r.error]
+
     def _latency_quantile(self, q: float) -> float:
-        lat = sorted(r.latency_ms for r in self.results)
+        lat = sorted(r.latency_ms for r in self.results if not r.error)
         if not lat:
             return 0.0
         if len(lat) == 1:
@@ -84,15 +113,47 @@ def digest(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:12]
 
 
-def run_case(client: ConverseClient, model_id: str, system_prompt: str, case: Case) -> CaseResult:
-    # TODO(task 4.3): retry ThrottlingException with exponential backoff + full jitter.
+def suite_hash(cases: list[Case]) -> str:
+    return digest("\n".join(json.dumps(c.__dict__, sort_keys=True) for c in cases))
+
+
+def _error_code(exc: Exception) -> str | None:
+    return getattr(exc, "response", {}).get("Error", {}).get("Code")
+
+
+def _converse_with_retry(
+    client: ConverseClient, request: dict[str, Any], retry: RetryPolicy, sleep: Callable[[float], None]
+) -> dict[str, Any]:
+    for attempt in range(retry.max_attempts):
+        try:
+            return client.converse(**request)
+        except Exception as e:
+            if _error_code(e) not in RETRYABLE_ERRORS or attempt == retry.max_attempts - 1:
+                raise
+            sleep(retry.delay(attempt))
+    raise AssertionError("unreachable")
+
+
+def run_case(
+    client: ConverseClient,
+    model_id: str,
+    system_prompt: str,
+    case: Case,
+    retry: RetryPolicy = RetryPolicy(),
+    sleep: Callable[[float], None] = time.sleep,
+) -> CaseResult:
+    request = {
+        "modelId": model_id,
+        "system": [{"text": system_prompt}],
+        "messages": [{"role": "user", "content": [{"text": case.input}]}],
+        "inferenceConfig": {"temperature": 0},
+    }
     started = time.perf_counter()
-    resp = client.converse(
-        modelId=model_id,
-        system=[{"text": system_prompt}],
-        messages=[{"role": "user", "content": [{"text": case.input}]}],
-        inferenceConfig={"temperature": 0},
-    )
+    try:
+        resp = _converse_with_retry(client, request, retry, sleep)
+    except Exception as e:
+        # An errored case counts as failed; the error is surfaced in the report.
+        return CaseResult(case.id, "", False, [], 0, 0, 0, error=f"{_error_code(e) or type(e).__name__}: {e}")
     wall_ms = int((time.perf_counter() - started) * 1000)
     output = "".join(c.get("text", "") for c in resp["output"]["message"]["content"])
     results = [graders.get(g["type"])(output, g) for g in case.graders]
@@ -108,10 +169,47 @@ def run_case(client: ConverseClient, model_id: str, system_prompt: str, case: Ca
     )
 
 
-def run_suite(client: ConverseClient, model_id: str, system_prompt: str, cases: list[Case]) -> SuiteResult:
-    # TODO(task 4.2): thread-pool concurrency + BudgetTracker integration.
-    suite_hash = digest("\n".join(json.dumps(c.__dict__, sort_keys=True) for c in cases))
-    result = SuiteResult(model_id, digest(system_prompt), suite_hash)
-    for case in cases:
-        result.results.append(run_case(client, model_id, system_prompt, case))
+def run_suite(
+    client: ConverseClient,
+    model_id: str,
+    system_prompt: str,
+    cases: list[Case],
+    *,
+    concurrency: int = 1,
+    prices: dict[str, Price] | None = None,
+    budget: BudgetTracker | None = None,
+    retry: RetryPolicy = RetryPolicy(),
+    sleep: Callable[[float], None] = time.sleep,
+) -> SuiteResult:
+    """Run all cases with bounded concurrency; stop submitting new cases once the budget is exhausted."""
+    if budget is not None and prices is None:
+        raise ValueError("budget tracking requires prices")
+
+    queue = iter(cases)
+    done_by_id: dict[str, CaseResult] = {}
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        in_flight: set[Future[CaseResult]] = set()
+
+        def submit_next() -> None:
+            if budget is not None and budget.exhausted:
+                return
+            case = next(queue, None)
+            if case is not None:
+                in_flight.add(pool.submit(run_case, client, model_id, system_prompt, case, retry, sleep))
+
+        for _ in range(concurrency):
+            submit_next()
+        while in_flight:
+            finished, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for fut in finished:
+                in_flight.remove(fut)
+                r = fut.result()
+                done_by_id[r.case_id] = r
+                if budget is not None:
+                    budget.add(cost_usd(prices, model_id, r.input_tokens, r.output_tokens))
+                submit_next()
+
+    result = SuiteResult(model_id, digest(system_prompt), suite_hash(cases))
+    result.results = [done_by_id[c.id] for c in cases if c.id in done_by_id]
+    result.partial = len(result.results) < len(cases)
     return result

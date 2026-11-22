@@ -42,8 +42,12 @@ scan ──► evaluate ──► port prompts (agent) ──► decide ──�
 git clone https://github.com/idle-danie/modelbot && cd modelbot
 uv sync
 cd examples/ticket-classifier
-uv run modelbot scan          # needs AWS credentials with Bedrock access
+uv run modelbot scan          # deprecated baselines + candidates (needs AWS credentials)
+uv run modelbot eval          # run evals on baseline + top candidates, write modelbot-report.md
+uv run modelbot eval --candidate us.anthropic.claude-haiku-4-5-20251001-v1:0   # pick candidates explicitly
 ```
+
+Every run prints its request count and estimated spend, and stops issuing new requests once `budget_usd` is reached.
 
 ## Configuration
 
@@ -81,8 +85,8 @@ for requirements, design, and the task list.
 
 | Stage | Status |
 |---|---|
-| Config, discovery, deterministic graders, decision, report table | ✅ |
-| Concurrency, retries, budget enforcement | 🚧 |
+| Config, discovery (incl. inference profiles), deterministic graders, decision, report | ✅ |
+| `eval` command with concurrency, throttling retries, budget enforcement | ✅ |
 | LLM judge, prompt porting agent | 🚧 |
 | PR creation, GitHub Action | 🚧 |
 

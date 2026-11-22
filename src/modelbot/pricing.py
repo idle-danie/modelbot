@@ -13,19 +13,24 @@ from modelbot.discovery import base_model_id
 DEFAULT_TABLE = Path(__file__).with_name("prices.yaml")
 
 
-class BudgetExceeded(Exception):
-    pass
-
-
 @dataclass(frozen=True)
 class Price:
     input_per_1m: float
     output_per_1m: float
 
 
-def load_prices(path: str | Path = DEFAULT_TABLE) -> dict[str, Price]:
-    raw = yaml.safe_load(Path(path).read_text()) or {}
-    return {k: Price(**v) for k, v in raw.get("models", {}).items()}
+def load_prices(path: str | Path = DEFAULT_TABLE, override: str | Path | None = None) -> dict[str, Price]:
+    """Load the bundled table, then let an optional override file add or replace entries."""
+    prices: dict[str, Price] = {}
+    for p in (path, override):
+        if p is not None:
+            raw = yaml.safe_load(Path(p).read_text()) or {}
+            prices.update({base_model_id(k): Price(**v) for k, v in raw.get("models", {}).items()})
+    return prices
+
+
+def has_price(prices: dict[str, Price], model_id: str) -> bool:
+    return base_model_id(model_id) in prices
 
 
 def cost_usd(prices: dict[str, Price], model_id: str, input_tokens: int, output_tokens: int) -> float:
@@ -36,15 +41,23 @@ def cost_usd(prices: dict[str, Price], model_id: str, input_tokens: int, output_
 
 
 class BudgetTracker:
-    """Thread-safe running total; raises once the cap is reached."""
+    """Thread-safe running total of estimated spend.
+
+    Never raises: callers check `exhausted` before issuing new requests, so in-flight requests finish and
+    their results are kept (Requirement 3.5).
+    """
 
     def __init__(self, cap_usd: float):
         self.cap_usd = cap_usd
         self.spent_usd = 0.0
+        self.requests = 0
         self._lock = threading.Lock()
 
     def add(self, amount: float) -> None:
         with self._lock:
             self.spent_usd += amount
-            if self.spent_usd >= self.cap_usd:
-                raise BudgetExceeded(f"spent ${self.spent_usd:.4f} of ${self.cap_usd:.2f} budget")
+            self.requests += 1
+
+    @property
+    def exhausted(self) -> bool:
+        return self.spent_usd >= self.cap_usd
