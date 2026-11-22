@@ -56,10 +56,10 @@
   - [x] 7.2 Urgent-without-qualifier handling
   - _Requirements: 6.1–6.3_
 
-- [x] 8. Reporting and PRs (JSON report pending)
+- [x] 8. Reporting and PRs
   - [x] 8.1 Markdown comparison table
   - [x] 8.2a Prompt diff section, all-models table
-  - [ ] 8.2b Failing-case section, JSON report
+  - [x] 8.2b Failing-case section, JSON report
   - [x] 8.3 File rewriting for key-path and regex targets
   - [x] 8.4 GitHub PR create/update, `--dry-run`
   - _Requirements: 7.1–7.5_

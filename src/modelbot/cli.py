@@ -16,7 +16,7 @@ from modelbot.config import Config, ConfigError, Target, load_config
 from modelbot.decision import Recommendation, decide, portable
 from modelbot.porter import port_prompt, strands_reviser, strands_rule_checker
 from modelbot.pricing import BudgetTracker, cost_usd, has_price, load_prices
-from modelbot.report import render_markdown
+from modelbot.report import render_json, render_markdown
 from modelbot.runner import load_cases, run_suite
 
 app = typer.Typer(help="Dependabot for LLMs: eval-gated model upgrades on Amazon Bedrock.")
@@ -243,6 +243,11 @@ def eval_cmd(
     outcomes = _evaluate_all(cfg, config.parent, candidate, max_candidates, prices, budget, no_port, repeats)
     md = "\n---\n\n".join(render_markdown(o.rec, prices) for o in outcomes)
     output.write_text(md)
+    json_path = output.with_suffix(".json")
+    json_path.write_text(
+        json.dumps([render_json(o.rec, prices) for o in outcomes], indent=2, ensure_ascii=False)
+    )
+    typer.echo(f"wrote {output} and {json_path}", err=True)
     typer.echo(md)
     typer.echo(_spend_line(budget, cfg), err=True)
 

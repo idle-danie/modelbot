@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import difflib
+from typing import Any
 
 from modelbot.decision import Recommendation
-from modelbot.porter import PortingResult
+from modelbot.porter import PortingResult, describe
 from modelbot.pricing import Price
-from modelbot.runner import SuiteResult
+from modelbot.runner import SuiteResult, base_case_id
 
 
 def _delta(new: float, old: float, lower_is_better: bool) -> str:
@@ -160,6 +161,71 @@ def candidates_table(rec: Recommendation, prices: dict[str, Price]) -> list[str]
     ]
 
 
+_MAX_FAILURES = 10
+
+
+def failing_cases(s: SuiteResult) -> list[tuple[str, str]]:
+    """(case id, reason) for each distinct failing case, first failure wins."""
+    seen: dict[str, str] = {}
+    for r in s.results:
+        cid = base_case_id(r.case_id)
+        if not r.passed and cid not in seen:
+            seen[cid] = r.error or next((g.detail for g in r.grader_results if not g.passed), "failed")
+    return list(seen.items())
+
+
+def failures_section(s: SuiteResult) -> list[str]:
+    fails = failing_cases(s)
+    if not fails:
+        return []
+    rows = [f"| `{cid}` | {_cell(reason, 120)} |" for cid, reason in fails[:_MAX_FAILURES]]
+    more = ["", f"…and {len(fails) - _MAX_FAILURES} more"] if len(fails) > _MAX_FAILURES else []
+    return [
+        "",
+        f"<details><summary>Failing cases on <code>{s.model_id}</code> ({len(fails)})</summary>",
+        "",
+        "| Case | Why |",
+        "|---|---|",
+        *rows,
+        *more,
+        "</details>",
+    ]
+
+
+def render_json(rec: Recommendation, prices: dict[str, Price]) -> dict[str, Any]:
+    """Machine-readable report (R7.2)."""
+
+    def model(s: SuiteResult) -> dict[str, Any]:
+        return {
+            "model_id": s.model_id,
+            "pass_rate": round(s.pass_rate, 4),
+            "p50_ms": s.p50_ms,
+            "p95_ms": s.p95_ms,
+            "cost_per_1k_usd": round(s.cost_per_1k(prices), 6),
+            "cases": len(s.results) // s.repeats,
+            "repeats": s.repeats,
+            "partial": s.partial,
+            "errored": len(s.errored),
+            "flaky": s.flaky,
+            "failing": [cid for cid, _ in failing_cases(s)],
+        }
+
+    return {
+        "target": rec.target,
+        "baseline": model(rec.baseline),
+        "baseline_status": rec.baseline_status,
+        "urgent": rec.urgent,
+        "recommended": rec.chosen.model_id if rec.chosen else None,
+        "manual_review": rec.manual_review,
+        "candidates": [model(s) for s in rec.ranked],
+        "porting": [
+            {**describe(pr), "additions": pr.additions, "revised_prompt": pr.revised if pr.accepted else None}
+            for pr in rec.ported.values()
+        ],
+        "suite_hash": rec.baseline.suite_hash,
+    }
+
+
 def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
     lines = [f"## 🤖 modelbot · `{rec.target}`", ""]
     if rec.baseline_status == "MISSING":
@@ -176,6 +242,7 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
             lines += ["", "Manual review required: the baseline is deprecated."]
         if rec.ranked:
             lines += ["", "Best candidate:", "", comparison_table(rec.baseline, rec.ranked[0], prices)]
+            lines += failures_section(rec.ranked[0])
         lines += candidates_table(rec, prices)
         for pr in rec.ported.values():
             lines += porting_section(pr)
@@ -190,8 +257,8 @@ def render_markdown(rec: Recommendation, prices: dict[str, Price]) -> str:
         f"{len(rec.baseline.results) // rec.baseline.repeats} cases × {rec.baseline.repeats} run(s)</sub>",
     ]
     lines += candidates_table(rec, prices)
+    lines += failures_section(rec.chosen)
     for pr in rec.ported.values():
         lines += porting_section(pr)
     lines += _caveats([rec.baseline, rec.chosen])
-    # TODO(task 8.2): failing-case <details> section; JSON report.
     return "\n".join(lines) + "\n"

@@ -188,7 +188,8 @@ for requirements, design, and the task list.
 | Prompt porting agent (Strands) with holdout-gated acceptance | ✅ |
 | LLM judge | 🚧 |
 | `run` command, PR creation and update, GitHub Action + OIDC role template | ✅ |
-| JSON report, failing-case section, eval-state cache | 🚧 |
+| JSON report, failing-case section | ✅ |
+| Eval-state cache, `llm_judge` grader, partial-phrase leak detection | 🚧 |
 
 ## License
 

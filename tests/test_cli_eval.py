@@ -95,6 +95,11 @@ def test_eval_recommends_upgrade_from_legacy_model(example_dir, tmp_path, monkey
     assert "LEGACY" in md
     assert "→ `amazon.nova-lite-v1:0`" in md
     assert "95%" in md and "100%" in md
+    report = json.loads(out.with_suffix(".json").read_text())[0]
+    assert report["recommended"] == "amazon.nova-lite-v1:0"
+    assert report["baseline_status"] == "LEGACY" and report["urgent"]
+    haiku = report["baseline"]
+    assert haiku["failing"] == ["tricky-03"] and haiku["cases"] == 20
 
 
 def test_eval_ports_prompt_for_near_miss_candidate(example_dir, tmp_path, monkeypatch):

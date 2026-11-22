@@ -49,3 +49,11 @@ def test_urgent_without_qualifier_needs_manual_review():
     rec = decide(TARGET, base, [weak], PRICES, urgent=True)
     assert rec.chosen is None and rec.manual_review
     assert "LEGACY" in render_markdown(rec, PRICES)
+
+
+def test_failing_cases_section_lists_reasons():
+    from modelbot.report import failures_section
+
+    weak = run_suite(FakeClient(good=7, latency_ms=1000), "m.new", "sys", CASES)
+    lines = "\n".join(failures_section(weak))
+    assert "Failing cases on <code>m.new</code> (3)" in lines and "missing 'ok'" in lines
