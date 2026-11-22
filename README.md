@@ -78,6 +78,11 @@ First real run, `examples/email-extractor`, Nova Lite with Nova Pro as the porti
 With 8 holdout cases a one-case change is close to run-to-run noise. Larger suites and repeated runs (planned) make
 these numbers trustworthy.
 
+> ⚠️ **Evals alone did not catch everything.** The accepted prompt in that run introduced a *wrong* business rule
+> (`"$89.50" -> 8950`) and a meaningless meta-instruction. Scores did not drop because the affected case was already
+> failing. Ported prompts must be reviewed by a human before merging, which is why modelbot opens a PR instead of
+> pushing. An automated rule-preservation check (task 6.11) is next.
+
 ## Configuration
 
 ```yaml
