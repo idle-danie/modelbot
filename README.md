@@ -132,7 +132,7 @@ Eval cases are JSONL with one or more graders (`exact`, `contains`, `regex`, `js
        config: modelbot.yaml
    ```
 
-Example PR opened by modelbot: [#1](https://github.com/idle-danie/modelbot/pull/1).
+Example PR opened by modelbot: [#2](https://github.com/idle-danie/modelbot/pull/2).
 
 ## IAM
 
