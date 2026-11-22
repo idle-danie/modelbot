@@ -1,0 +1,8 @@
+# USD per 1M tokens, on-demand. ILLUSTRATIVE VALUES — verify at https://aws.amazon.com/bedrock/pricing/
+# and override with --prices <file> for your region and contract.
+models:
+  anthropic.claude-3-5-haiku-20241022-v1:0: {input_per_1m: 0.80, output_per_1m: 4.00}
+  anthropic.claude-haiku-4-5-20251001-v1:0: {input_per_1m: 1.00, output_per_1m: 5.00}
+  anthropic.claude-sonnet-4-5-20250929-v1:0: {input_per_1m: 3.00, output_per_1m: 15.00}
+  amazon.nova-lite-v1:0: {input_per_1m: 0.06, output_per_1m: 0.24}
+  amazon.nova-pro-v1:0: {input_per_1m: 0.80, output_per_1m: 3.20}

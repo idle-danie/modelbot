@@ -1,0 +1,19 @@
+region: us-east-1
+budget_usd: 1.0
+concurrency: 4
+judge_model: us.amazon.nova-pro-v1:0
+porting_model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+
+candidates:
+  providers: [anthropic, amazon]
+
+targets:
+  - name: ticket-classifier
+    file: app/config.yaml
+    key: llm.model_id
+    prompts: [prompts/classify.md]
+    evals: evals/cases.jsonl
+    threshold: 0.90
+    tolerance: 0.02
+    porting: {margin: 0.15, max_iterations: 3, max_regressions: 1}
+    limits: {max_cost_ratio: 2.0, max_p95_ratio: 1.5}
